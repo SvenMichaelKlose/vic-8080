@@ -1,4 +1,4 @@
-ASMSOURCES=main.asm
+ASMSOURCES=main.asm bios.asm
 PROGRAM=cpm
 
 CC65_HOME = /usr/local

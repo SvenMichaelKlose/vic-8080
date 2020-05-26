@@ -4,6 +4,11 @@
 
 .export _main
 
+.exportzp accu, b, c, d, e, h, l, flags
+.exportzp FLAG_S, FLAG_Z, FLAG_H, FLAG_P, FLAG_1, FLAG_C
+ 
+.zeropage
+
 FLAG_S  = $80
 FLAG_Z  = $40
 FLAG_H  = $10
