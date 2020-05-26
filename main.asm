@@ -125,6 +125,16 @@ n:  sta flags
     rts
 .endproc
 
+;case 0x00: break; // NOP
+;// undocumented NOPs
+;case 0x08:
+;case 0x10: case 0x18:
+;case 0x20: case 0x28:
+;case 0x30: case 0x38:
+;break;
+
+;case 0x76: c->halted = 1; break; // HLT
+
 ;// 8 bit transfer instructions
 ;case 0x7F: c->a = c->a; break; // MOV A,A
 
@@ -1001,10 +1011,6 @@ n:  sta flags
     jmp next
 .endproc
 
-;case 0x00: break; // NOP
-
-;case 0x76: c->halted = 1; break; // HLT
-
 ; // increments a byte
 ; static inline uint8_t i8080_inr(i8080* const c, uint8_t val) {
 ;     const uint8_t result = val + 1;
@@ -1653,12 +1659,11 @@ n4: clc
 
 ;// branch control/program counter load instructions
 ;case 0xC3: i8080_jmp(c, i8080_next_word(c)); break; // JMP
+;// undocumented JMP
+;case 0xCB: i8080_jmp(c, i8080_next_word(c)); break;
 .proc op_c3
-    jsr fetch_word
-    lda v
-    sta pc
-    lda v+1
-    sta pc+1
+    ldy #pc
+    jsr fetch_word_y
     jmp next_rebanked
 .endproc
 
@@ -1846,7 +1851,6 @@ n2: dec sp+1
 n:  inc sp+1
     jmp next_rebanked
 .endproc
-
 
 ;// returns from subroutine if a condition is met
 ;static inline void i8080_cond_ret(i8080* const c, bool condition) {
@@ -2080,21 +2084,6 @@ n:  inc sp+1
 ;case 0xD3: // OUT
     ;c->port_out(c->userdata, i8080_next_byte(c), c->a);
 ;break;
-
-;// undocumented NOPs
-;case 0x08:
-;case 0x10: case 0x18:
-;case 0x20: case 0x28:
-;case 0x30: case 0x38:
-;break;
-
-;// undocumented JMP
-;case 0xCB: i8080_jmp(c, i8080_next_word(c)); break;
-.proc op_cb
-    ldy #pc
-    jsr fetch_word_y
-    jmp next_rebanked
-.endproc
 
 .proc make_flags
     ; Parity flags
