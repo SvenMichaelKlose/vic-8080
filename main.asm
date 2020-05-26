@@ -122,29 +122,6 @@ n:  sta flags
     rts
 .endproc
 
-.proc push8080
-    dec sp
-    ldx sp  ; -1?
-    inx
-    beq n2
-n:  ldx #sp
-    ;ldy #v
-    jmp write_word
-n2: dec sp+1
-    jmp n
-.endproc
-
-.proc pop8080
-    ldx #sp
-    ;ldy #v
-    jsr read_word
-    inc sp
-    beq n
-    rts
-n:  inc sp+1
-    rts
-.endproc
-
 ; // adds a word to HL
 ; static inline void i8080_dad(i8080* const c, uint16_t val) {
 ;     c->cf = ((i8080_get_hl(c) + val) >> 16) & 1;
@@ -1938,6 +1915,18 @@ n2: dec sp+1
     jmp cond_call
 .endproc
 
+.proc push8080
+    dec sp
+    ldx sp  ; -1?
+    inx
+    beq n2
+n:  ldx #sp
+    ;ldy #v
+    jmp write_word
+n2: dec sp+1
+    jmp n
+.endproc
+
 ;// stack operation instructions
 ;case 0xC5: i8080_push_stack(c, i8080_get_bc(c)); break; // PUSH B
 .proc op_c5
@@ -1968,6 +1957,24 @@ n2: dec sp+1
 ;    psw |= c->cf << 0;
 ;    i8080_push_stack(c, c->a << 8 | psw);
 ;}
+.proc op_f5
+    lda flags
+    sta v
+    lda accu
+    sta v+1
+    ldx #v
+    jmp push8080
+.endproc
+
+.proc pop8080
+    ldx #sp
+    jsr read_word
+    inc sp
+    beq n
+    jmp next
+n:  inc sp+1
+    jmp next
+.endproc
 
 ;case 0xC1: i8080_set_bc(c, i8080_pop_stack(c)); break; // POP B
 .proc op_c1
@@ -1976,12 +1983,12 @@ n2: dec sp+1
 .endproc
 ;case 0xD1: i8080_set_de(c, i8080_pop_stack(c)); break; // POP D
 .proc op_d1
-    ldy #bc
+    ldy #de
     jmp pop8080
 .endproc
 ;case 0xE1: i8080_set_hl(c, i8080_pop_stack(c)); break; // POP H
 .proc op_e1
-    ldy #bc
+    ldy #hl
     jmp pop8080
 .endproc
 
@@ -1998,6 +2005,20 @@ n2: dec sp+1
 ;    c->pf = (psw >> 2) & 1;
 ;    c->cf = (psw >> 0) & 1;
 ;}
+.proc op_f1
+    ldx #sp
+    ldy #v
+    jsr read_word
+    inc sp
+    beq n
+    lda v
+    sta flags
+    lda #v+1
+    sta accu
+r:  jmp next
+n:  inc sp+1
+    jmp r
+.endproc
 
 ;// input/output instructions
 ;case 0xDB: // IN
