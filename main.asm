@@ -122,233 +122,6 @@ n:  sta flags
     rts
 .endproc
 
-; // adds a word to HL
-; static inline void i8080_dad(i8080* const c, uint16_t val) {
-;     c->cf = ((i8080_get_hl(c) + val) >> 16) & 1;
-;     i8080_set_hl(c, i8080_get_hl(c) + val);
-; }
-; Add word register to HL.
-.proc dad
-    lsr flags
-    clc
-    lda l
-    adc 0,y
-    sta l
-    lda h
-    adc 1,y
-    sta h
-    rol flags
-    jmp next
-.endproc
-
-; // increments a byte
-; static inline uint8_t i8080_inr(i8080* const c, uint8_t val) {
-;     const uint8_t result = val + 1;
-;     c->hf = (result & 0xF) == 0;
-;     SET_ZSP(c, result);
-;     return result;
-; }
-.proc inr
-    inc 0,x
-    lda 0,x
-    sta v
-    and #$0f
-    jsr set_halfcarry_inv
-    jmp get_flags
-.endproc
-
-; // decrements a byte
-; static inline uint8_t i8080_dcr(i8080* const c, uint8_t val) {
-;     const uint8_t result = val - 1;
-;     c->hf = !((result & 0xF) == 0xF);
-;     SET_ZSP(c, result);
-;     return result;
-; }
-.proc dcr
-    dec 0,x
-    lda 0,x
-    sta v
-    and #$0f
-    cmp #$0f
-    jsr set_halfcarry
-    jmp get_flags
-.endproc
-
-; // executes a logic "and" between register A and a byte, then stores the
-; // result in register A
-; static inline void i8080_ana(i8080* const c, uint8_t val) {
-;     uint8_t result = c->a & val;
-;     c->cf = 0;
-;     c->hf = ((c->a | val) & 0x08) != 0;
-;     SET_ZSP(c, result);
-;     c->a = result;
-; }
-.proc ana
-    lda accu
-    tax
-    and 0,x
-    sta accu
-    sta v
-    txa
-    ora 0,x
-    and #$08
-    jsr set_halfcarry
-    lda flags
-    and #FLAG_C ^ $ff
-    sta flags
-    jmp get_flags
-.endproc
-
-; // executes a logic "xor" between register A and a byte, then stores the
-; // result in register A
-; static inline void i8080_xra(i8080* const c, uint8_t val) {
-;     c->a ^= val;
-;     c->cf = 0;
-;     c->hf = 0;
-;     SET_ZSP(c, c->a);
-; }
-.proc xra
-    lda accu
-    eor 0,x
-    sta accu
-    jmp get_logic_flags
-.endproc
-
-; // executes a logic "or" between register A and a byte, then stores the
-; // result in register A
-; static inline void i8080_ora(i8080* const c, uint8_t val) {
-;     c->a |= val;
-;     c->cf = 0;
-;     c->hf = 0;
-;     SET_ZSP(c, c->a);
-; }
-.proc ora8080
-    lda accu
-    ora 0,x
-    sta accu
-    jmp get_logic_flags
-.endproc
-
-;// adds a value (+ an optional carry flag) to a register
-;static inline void i8080_add(i8080* const c, uint8_t* const reg, uint8_t val,
-;                             bool cy) {
-;    const uint8_t result = *reg + val + cy;
-;    c->cf = carry(8, *reg, val, cy);
-;    c->hf = carry(4, *reg, val, cy);
-;    SET_ZSP(c, result);
-;    *reg = result;
-;}
-.proc adr8080
-    lda accu
-    adc 0,x
-    sta accu
-
-    rol flags   ; Set carry
-
-    eor 0,x
-    eor v
-    and #$04
-    asl
-    asl
-    ora flags
-    sta flags
-    jmp next
-.endproc
-
-.proc add8080
-    lsr flags       ; Clear carry flag.
-    clc
-    jmp adr8080
-.endproc
-
-.proc adc8080
-    lsr flags       ; Get and clear carry flag.
-    jmp adr8080
-.endproc
-
-.proc sub8080
-    lsr flags       ; Clear carry flag.
-    clc
-    jmp adr8080
-.endproc
-
-.proc sbb8080
-    lsr flags       ; Get and clear carry flag.
-    jmp adr8080
-.endproc
-
-; // compares the register A to another byte
-; static inline void i8080_cmp(i8080* const c, uint8_t val) {
-;     const int16_t result = c->a - val;
-;     c->cf = result >> 8;
-;     c->hf = ~(c->a ^ result ^ val) & 0x10;
-;     SET_ZSP(c, result & 0xFF);
-; }
-.proc cmp8080
-    lsr flags
-    lda accu
-    sec
-    sbc 0,x
-    sta v
-    rol flags
-
-    lda accu
-    eor tmp
-    eor 0,x
-    and #$10
-    jsr set_halfcarry
-    jmp get_flags
-.endproc
-
-;// pushes the current pc to the stack, then jumps to an address
-;static inline void i8080_call(i8080* const c, uint16_t addr) {
-;    i8080_push_stack(c, c->pc);
-;    i8080_jmp(c, addr);
-;}
-
-;// calls to next word in memory if a condition is met
-;static inline void i8080_cond_call(i8080* const c, bool condition) {
-;    uint16_t addr = i8080_next_word(c);
-;    if (condition) {
-;        i8080_call(c, addr);
-;        c->cyc += 6;
-;    }
-;}
-
-;// returns from subroutine
-;static inline void i8080_ret(i8080* const c) {
-;    c->pc = i8080_pop_stack(c);
-;}
-
-;// returns from subroutine if a condition is met
-;static inline void i8080_cond_ret(i8080* const c, bool condition) {
-;    if (condition) {
-;        i8080_ret(c);
-;        c->cyc += 6;
-;    }
-;}
-
-;// Decimal Adjust Accumulator: the eight-bit number in register A is adjusted
-;// to form two four-bit binary-coded-decimal digits.
-;// For example, if A=$2B and DAA is executed, A becomes $31.
-;static inline void i8080_daa(i8080* const c) {
-;    bool cy = c->cf;
-;    uint8_t correction = 0;
-;
-;    const uint8_t lsb = c->a & 0x0F;
-;    const uint8_t msb = c->a >> 4;
-;
-;    if (c->hf || lsb > 9) {
-;        correction += 0x06;
-;    }
-;    if (c->cf || msb > 9 || (msb >= 9 && lsb > 9)) {
-;        correction += 0x60;
-;        cy = 1;
-;    }
-;    i8080_add(c, &c->a, correction, 0);
-;    c->cf = cy;
-;}
-
 ;// 8 bit transfer instructions
 ;case 0x7F: c->a = c->a; break; // MOV A,A
 
@@ -899,6 +672,44 @@ n:  sta flags
 ;    i8080_set_hl(c, val);
 ;}
 
+;// adds a value (+ an optional carry flag) to a register
+;static inline void i8080_add(i8080* const c, uint8_t* const reg, uint8_t val,
+;                             bool cy) {
+;    const uint8_t result = *reg + val + cy;
+;    c->cf = carry(8, *reg, val, cy);
+;    c->hf = carry(4, *reg, val, cy);
+;    SET_ZSP(c, result);
+;    *reg = result;
+;}
+.proc adr8080
+    lda accu
+    adc 0,x
+    sta accu
+
+    rol flags   ; Set carry
+
+    eor 0,x
+    eor v
+    and #$04
+    asl
+    asl
+    ora flags
+    sta flags
+    jmp next
+.endproc
+
+.proc add8080
+    lsr flags       ; Clear carry flag.
+    clc
+    jmp adr8080
+.endproc
+
+.proc adc8080
+    lsr flags       ; Get and clear carry flag.
+    jmp adr8080
+.endproc
+
+
 ;// add byte instructions
 ;case 0x87: i8080_add(c, &c->a, c->a, 0); break; // ADD A
 .proc op_87
@@ -1001,6 +812,18 @@ n:  sta flags
     jsr fetch_byte
     ldx #v
     jmp adc8080
+.endproc
+
+
+.proc sub8080
+    lsr flags       ; Clear carry flag.
+    clc
+    jmp adr8080
+.endproc
+
+.proc sbb8080
+    lsr flags       ; Get and clear carry flag.
+    jmp adr8080
 .endproc
 
 ;// substract byte instructions
@@ -1106,6 +929,25 @@ n:  sta flags
     jmp sbb8080
 .endproc
 
+; // adds a word to HL
+; static inline void i8080_dad(i8080* const c, uint16_t val) {
+;     c->cf = ((i8080_get_hl(c) + val) >> 16) & 1;
+;     i8080_set_hl(c, i8080_get_hl(c) + val);
+; }
+; Add word register to HL.
+.proc dad
+    lsr flags
+    clc
+    lda l
+    adc 0,y
+    sta l
+    lda h
+    adc 1,y
+    sta h
+    rol flags
+    jmp next
+.endproc
+
 ;// double byte add instructions
 ;case 0x09: i8080_dad(c, i8080_get_bc(c)); break; // DAD B
 .proc op_09
@@ -1146,6 +988,22 @@ n:  sta flags
 ;case 0x00: break; // NOP
 
 ;case 0x76: c->halted = 1; break; // HLT
+
+; // increments a byte
+; static inline uint8_t i8080_inr(i8080* const c, uint8_t val) {
+;     const uint8_t result = val + 1;
+;     c->hf = (result & 0xF) == 0;
+;     SET_ZSP(c, result);
+;     return result;
+; }
+.proc inr
+    inc 0,x
+    lda 0,x
+    sta v
+    and #$0f
+    jsr set_halfcarry_inv
+    jmp get_flags
+.endproc
 
 ;// increment byte instructions
 ;case 0x3C: c->a = i8080_inr(c, c->a); break; // INR A
@@ -1197,6 +1055,23 @@ n:  sta flags
     lda v
     and #$0f
     jsr set_halfcarry_inv
+    jmp get_flags
+.endproc
+
+; // decrements a byte
+; static inline uint8_t i8080_dcr(i8080* const c, uint8_t val) {
+;     const uint8_t result = val - 1;
+;     c->hf = !((result & 0xF) == 0xF);
+;     SET_ZSP(c, result);
+;     return result;
+; }
+.proc dcr
+    dec 0,x
+    lda 0,x
+    sta v
+    and #$0f
+    cmp #$0f
+    jsr set_halfcarry
     jmp get_flags
 .endproc
 
@@ -1333,6 +1208,26 @@ n:  inc sp+1
 
 ;// special accumulator and flag instructions
 ;case 0x27: i8080_daa(c); break; // DAA
+;// Decimal Adjust Accumulator: the eight-bit number in register A is adjusted
+;// to form two four-bit binary-coded-decimal digits.
+;// For example, if A=$2B and DAA is executed, A becomes $31.
+;static inline void i8080_daa(i8080* const c) {
+;    bool cy = c->cf;
+;    uint8_t correction = 0;
+;
+;    const uint8_t lsb = c->a & 0x0F;
+;    const uint8_t msb = c->a >> 4;
+;
+;    if (c->hf || lsb > 9) {
+;        correction += 0x06;
+;    }
+;    if (c->cf || msb > 9 || (msb >= 9 && lsb > 9)) {
+;        correction += 0x60;
+;        cy = 1;
+;    }
+;    i8080_add(c, &c->a, correction, 0);
+;    c->cf = cy;
+;}
 
 ;case 0x2F: c->a = ~c->a; break; // CMA
 .proc op_2f
@@ -1423,6 +1318,31 @@ n:  inc sp+1
     jmp next
 .endproc
 
+; // executes a logic "and" between register A and a byte, then stores the
+; // result in register A
+; static inline void i8080_ana(i8080* const c, uint8_t val) {
+;     uint8_t result = c->a & val;
+;     c->cf = 0;
+;     c->hf = ((c->a | val) & 0x08) != 0;
+;     SET_ZSP(c, result);
+;     c->a = result;
+; }
+.proc ana
+    lda accu
+    tax
+    and 0,x
+    sta accu
+    sta v
+    txa
+    ora 0,x
+    and #$08
+    jsr set_halfcarry
+    lda flags
+    and #FLAG_C ^ $ff
+    sta flags
+    jmp get_flags
+.endproc
+
 ;// logical byte instructions
 ;case 0xA7: i8080_ana(c, c->a); break; // ANA A
 .proc op_a7
@@ -1472,6 +1392,21 @@ n:  inc sp+1
     jsr fetch_byte
     ldx #v
     jmp ana
+.endproc
+
+; // executes a logic "xor" between register A and a byte, then stores the
+; // result in register A
+; static inline void i8080_xra(i8080* const c, uint8_t val) {
+;     c->a ^= val;
+;     c->cf = 0;
+;     c->hf = 0;
+;     SET_ZSP(c, c->a);
+; }
+.proc xra
+    lda accu
+    eor 0,x
+    sta accu
+    jmp get_logic_flags
 .endproc
 
 ;case 0xAF: i8080_xra(c, c->a); break; // XRA A
@@ -1524,6 +1459,21 @@ n:  inc sp+1
     jmp xra
 .endproc
 
+; // executes a logic "or" between register A and a byte, then stores the
+; // result in register A
+; static inline void i8080_ora(i8080* const c, uint8_t val) {
+;     c->a |= val;
+;     c->cf = 0;
+;     c->hf = 0;
+;     SET_ZSP(c, c->a);
+; }
+.proc ora8080
+    lda accu
+    ora 0,x
+    sta accu
+    jmp get_logic_flags
+.endproc
+
 ;case 0xB7: i8080_ora(c, c->a); break; // ORA A
 .proc op_b7
     ldx #accu
@@ -1572,6 +1522,28 @@ n:  inc sp+1
     jsr fetch_byte
     ldx #v
     jmp ora8080
+.endproc
+
+; // compares the register A to another byte
+; static inline void i8080_cmp(i8080* const c, uint8_t val) {
+;     const int16_t result = c->a - val;
+;     c->cf = result >> 8;
+;     c->hf = ~(c->a ^ result ^ val) & 0x10;
+;     SET_ZSP(c, result & 0xFF);
+; }
+.proc cmp8080
+    lsr flags
+    lda accu
+    sec
+    sbc 0,x
+    sta v
+    rol flags
+    lda accu
+    eor tmp
+    eor 0,x
+    and #$10
+    jsr set_halfcarry
+    jmp get_flags
 .endproc
 
 ;case 0xBF: i8080_cmp(c, c->a); break; // CMP A
@@ -1719,6 +1691,11 @@ n:  jmp next_rebanked
 ;case 0xCD: i8080_call(c, i8080_next_word(c)); break; // CALL
 ;// undocumented CALLs
 ;case 0xDD: case 0xED: case 0xFD: i8080_call(c, i8080_next_word(c));
+;// pushes the current pc to the stack, then jumps to an address
+;static inline void i8080_call(i8080* const c, uint16_t addr) {
+;    i8080_push_stack(c, c->pc);
+;    i8080_jmp(c, addr);
+;}
 .proc op_dd
     dec sp
     ldx sp  ; -1?
@@ -1734,6 +1711,15 @@ n2: dec sp+1
     jmp n
 .endproc
 
+
+;// calls to next word in memory if a condition is met
+;static inline void i8080_cond_call(i8080* const c, bool condition) {
+;    uint16_t addr = i8080_next_word(c);
+;    if (condition) {
+;        i8080_call(c, addr);
+;        c->cyc += 6;
+;    }
+;}
 .proc cond_call
     and flags
     bne op_dd
@@ -1791,6 +1777,10 @@ n2: dec sp+1
 ;case 0xC9: i8080_ret(c); break; // RET
 ;// undocumented RET
 ;case 0xD9: i8080_ret(c); break;
+;// returns from subroutine
+;static inline void i8080_ret(i8080* const c) {
+;    c->pc = i8080_pop_stack(c);
+;}
 .proc op_c9
     ldx #sp
     ldy #pc
@@ -1802,6 +1792,14 @@ n:  inc sp+1
     jmp next_rebanked
 .endproc
 
+
+;// returns from subroutine if a condition is met
+;static inline void i8080_cond_ret(i8080* const c, bool condition) {
+;    if (condition) {
+;        i8080_ret(c);
+;        c->cyc += 6;
+;    }
+;}
 .proc cond_ret
     and flags
     bne op_c9
