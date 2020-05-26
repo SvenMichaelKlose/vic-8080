@@ -674,6 +674,19 @@ n:  sta flags
 ;    i8080_ww(c, c->sp, i8080_get_hl(c));
 ;    i8080_set_hl(c, val);
 ;}
+.proc op_e3
+    ldx #sp
+    ldy #v
+    jsr read_byte
+    ldx #sp
+    ldy #hl
+    jsr write_byte
+    lda v
+    sta l
+    lda v+1
+    sta h
+    jmp next
+.endproc
 
 ;// adds a value (+ an optional carry flag) to a register
 ;static inline void i8080_add(i8080* const c, uint8_t* const reg, uint8_t val,
