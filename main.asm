@@ -12,24 +12,27 @@ FLAG_C  = $01
 .zeropage
 
 register_start:
-pc:     .res 2
-accu:   .res 1
-flags:  .res 1
+pc:         .res 2
+accu:       .res 1
+flags:      .res 1
 bc:
-b:      .res 1
-c:      .res 1
+b:          .res 1
+c:          .res 1
 de:
-d:      .res 1
-e:      .res 1
+d:          .res 1
+e:          .res 1
 hl:
-h:      .res 1
-l:      .res 1
-sp:     .res 2
-flag_i: .res 1
+h:          .res 1
+l:          .res 1
+sp:         .res 2
+flag_i:     .res 1
 register_end:
 
-v:      .res 2
-tmp:    .res 1
+v:          .res 2
+daa_correction:
+tmp:        .res 1
+daa_lsb:    .res 1
+daa_msb:    .res 1
 
 .data
 
@@ -1228,6 +1231,45 @@ n:  inc sp+1
 ;    i8080_add(c, &c->a, correction, 0);
 ;    c->cf = cy;
 ;}
+.proc op_27
+    lda #0
+    sta daa_correction
+    lda accu
+    and #$0f
+    sta daa_lsb
+    lda accu
+    lsr
+    lsr
+    lsr
+    lsr
+    sta daa_msb
+
+    lda flags
+    and #FLAG_H
+    bne n1
+    lda daa_lsb
+    cmp #9
+    bcc n2
+n1: lda #$06
+    sta daa_correction
+
+n2: lda flags
+    and #FLAG_C
+    bne n3
+    lda daa_msb
+    cmp #9
+    bcs n3
+    bne n4
+n3: lda daa_correction
+    ora #$60
+    sta daa_correction
+
+n4: clc
+    lda accu
+    adc daa_correction
+    sta accu
+    jmp next
+.endproc
 
 ;case 0x2F: c->a = ~c->a; break; // CMA
 .proc op_2f
