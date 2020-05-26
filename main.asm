@@ -126,7 +126,7 @@ n:  sta flags
     dec sp
     ldx sp  ; -1?
     inx
-    bne n2
+    beq n2
 n:  ldx #sp
     ;ldy #v
     jmp write_word
@@ -322,20 +322,6 @@ n:  inc sp+1
     jsr set_halfcarry
     jmp get_flags
 .endproc
-
-; // sets the program counter to a given address
-; static inline void i8080_jmp(i8080* const c, uint16_t addr) {
-;     c->pc = addr;
-; }
-
-;// jumps to next address pointed by the next word in memory if a condition
-;// is met
-;static inline void i8080_cond_jmp(i8080* const c, bool condition) {
-;    uint16_t addr = i8080_next_word(c);
-;    if (condition) {
-;        c->pc = addr;
-;    }
-;}
 
 ;// pushes the current pc to the stack, then jumps to an address
 ;static inline void i8080_call(i8080* const c, uint16_t addr) {
@@ -1672,36 +1658,225 @@ n:  inc sp+1
     jmp next_rebanked
 .endproc
 
+;// jumps to next address pointed by the next word in memory if a condition
+;// is met
+;static inline void i8080_cond_jmp(i8080* const c, bool condition) {
+;    uint16_t addr = i8080_next_word(c);
+;    if (condition) {
+;        c->pc = addr;
+;    }
+;}
+.proc cond_jmp
+    jsr fetch_word
+    tya
+    and flags
+    bne n
+    lda v
+    sta pc
+    lda v+1
+    sta pc+1
+n:  jmp next_rebanked
+.endproc
+
+.proc cond_jmp_inv
+    jsr fetch_word
+    tya
+    and flags
+    beq n
+    lda v
+    sta pc
+    lda v+1
+    sta pc+1
+n:  jmp next_rebanked
+.endproc
+
 ;case 0xC2: i8080_cond_jmp(c, c->zf == 0); break; // JNZ
+.proc op_c2
+    ldy #FLAG_Z
+    jmp cond_jmp_inv
+.endproc
+
 ;case 0xCA: i8080_cond_jmp(c, c->zf == 1); break; // JZ
+.proc op_ca
+    ldy #FLAG_Z
+    jmp cond_jmp
+.endproc
+
 ;case 0xD2: i8080_cond_jmp(c, c->cf == 0); break; // JNC
+.proc op_d2
+    ldy #FLAG_C
+    jmp cond_jmp_inv
+.endproc
+
 ;case 0xDA: i8080_cond_jmp(c, c->cf == 1); break; // JC
+.proc op_da
+    ldy #FLAG_C
+    jmp cond_jmp
+.endproc
+
 ;case 0xE2: i8080_cond_jmp(c, c->pf == 0); break; // JPO
+.proc op_e2
+    ldy #FLAG_P
+    jmp cond_jmp_inv
+.endproc
+
 ;case 0xEA: i8080_cond_jmp(c, c->pf == 1); break; // JPE
+.proc op_ea
+    ldy #FLAG_P
+    jmp cond_jmp
+.endproc
+
 ;case 0xF2: i8080_cond_jmp(c, c->sf == 0); break; // JP
+.proc op_f2
+    ldy #FLAG_S
+    jmp cond_jmp_inv
+.endproc
+
 ;case 0xFA: i8080_cond_jmp(c, c->sf == 1); break; // JM
+.proc op_fa
+    ldy #FLAG_S
+    jmp cond_jmp
+.endproc
 
 ;case 0xE9: c->pc = i8080_get_hl(c); break; // PCHL
 ;case 0xCD: i8080_call(c, i8080_next_word(c)); break; // CALL
+;// undocumented CALLs
+;case 0xDD: case 0xED: case 0xFD: i8080_call(c, i8080_next_word(c));
+.proc op_dd
+    dec sp
+    ldx sp  ; -1?
+    inx
+    bne n2
+n:  ldx #sp
+    ldy #pc
+    jsr write_word_call
+    ldy #pc
+    jsr fetch_word_y
+    jmp next_rebanked
+n2: dec sp+1
+    jmp n
+.endproc
+
+.proc cond_call
+    and flags
+    bne op_dd
+    jsr fetch_word
+.endproc
+
+.proc cond_call_inv
+    and flags
+    beq op_dd
+    jsr fetch_word
+.endproc
+
 
 ;case 0xC4: i8080_cond_call(c, c->zf == 0); break; // CNZ
+.proc op_c4
+    lda #FLAG_Z
+    jmp cond_call_inv
+.endproc
 ;case 0xCC: i8080_cond_call(c, c->zf == 1); break; // CZ
+.proc op_cc
+    lda #FLAG_Z
+    jmp cond_call
+.endproc
 ;case 0xD4: i8080_cond_call(c, c->cf == 0); break; // CNC
+.proc op_d4
+    lda #FLAG_C
+    jmp cond_call_inv
+.endproc
 ;case 0xDC: i8080_cond_call(c, c->cf == 1); break; // CC
+.proc op_dc
+    lda #FLAG_C
+    jmp cond_call
+.endproc
 ;case 0xE4: i8080_cond_call(c, c->pf == 0); break; // CPO
+.proc op_e4
+    lda #FLAG_P
+    jmp cond_call_inv
+.endproc
 ;case 0xEC: i8080_cond_call(c, c->pf == 1); break; // CPE
+.proc op_ec
+    lda #FLAG_P
+    jmp cond_call
+.endproc
 ;case 0xF4: i8080_cond_call(c, c->sf == 0); break; // CP
+.proc op_f4
+    lda #FLAG_S
+    jmp cond_call_inv
+.endproc
 ;case 0xFC: i8080_cond_call(c, c->sf == 1); break; // CM
+.proc op_fc
+    lda #FLAG_S
+    jmp cond_call
+.endproc
 
 ;case 0xC9: i8080_ret(c); break; // RET
+;// undocumented RET
+;case 0xD9: i8080_ret(c); break;
+.proc op_c9
+    ldx #sp
+    ldy #pc
+    jsr read_word
+    inc sp
+    beq n
+    jmp next_rebanked
+n:  inc sp+1
+    jmp next_rebanked
+.endproc
+
+.proc cond_ret
+    and flags
+    bne op_c9
+    jmp next_rebanked
+.endproc
+
+.proc cond_ret_inv
+    and flags
+    beq op_c9
+    jmp next_rebanked
+.endproc
+
 ;case 0xC0: i8080_cond_ret(c, c->zf == 0); break; // RNZ
+.proc op_c0
+    lda #FLAG_Z
+    jmp cond_call_inv
+.endproc
 ;case 0xC8: i8080_cond_ret(c, c->zf == 1); break; // RZ
+.proc op_c8
+    lda #FLAG_Z
+    jmp cond_call
+.endproc
 ;case 0xD0: i8080_cond_ret(c, c->cf == 0); break; // RNC
+.proc op_d0
+    lda #FLAG_C
+    jmp cond_call_inv
+.endproc
 ;case 0xD8: i8080_cond_ret(c, c->cf == 1); break; // RC
+.proc op_d8
+    lda #FLAG_C
+    jmp cond_call
+.endproc
 ;case 0xE0: i8080_cond_ret(c, c->pf == 0); break; // RPO
+.proc op_e0
+    lda #FLAG_P
+    jmp cond_call_inv
+.endproc
 ;case 0xE8: i8080_cond_ret(c, c->pf == 1); break; // RPE
+.proc op_e8
+    lda #FLAG_P
+    jmp cond_call
+.endproc
 ;case 0xF0: i8080_cond_ret(c, c->sf == 0); break; // RP
+.proc op_f0
+    lda #FLAG_S
+    jmp cond_call_inv
+.endproc
 ;case 0xF8: i8080_cond_ret(c, c->sf == 1); break; // RM
+.proc op_f8
+    lda #FLAG_S
+    jmp cond_call
+.endproc
 
 ;case 0xC7: i8080_call(c, 0x00); break; // RST 0
 ;case 0xCF: i8080_call(c, 0x08); break; // RST 1
@@ -1787,36 +1962,6 @@ n:  inc sp+1
 ;case 0x20: case 0x28:
 ;case 0x30: case 0x38:
 ;break;
-
-;// undocumented RET
-;case 0xD9: i8080_ret(c); break;
-.proc op_d9
-    ldx #sp
-    ldy #pc
-    jsr read_word
-    inc sp
-    beq n
-    jmp next_rebanked
-n:  inc sp+1
-    jmp next_rebanked
-.endproc
-
-;// undocumented CALLs
-;case 0xDD: case 0xED: case 0xFD: i8080_call(c, i8080_next_word(c));
-.proc op_dd
-    dec sp
-    ldx sp  ; -1?
-    inx
-    bne n2
-n:  ldx #sp
-    ldy #pc
-    jsr write_word_call
-    ldy #pc
-    jsr fetch_word_y
-    jmp next_rebanked
-n2: dec sp+1
-    jmp n
-.endproc
 
 ;// undocumented JMP
 ;case 0xCB: i8080_jmp(c, i8080_next_word(c)); break;
