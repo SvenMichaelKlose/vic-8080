@@ -2,6 +2,8 @@
 ;
 ; Copyright (c) 2020 Sven Michael Klose pixel@hugbox.org
 
+.export _main
+
 FLAG_S  = $80
 FLAG_Z  = $40
 FLAG_H  = $10
@@ -34,11 +36,27 @@ tmp:        .res 1
 daa_lsb:    .res 1
 daa_msb:    .res 1
 
-.data
+
+.bss
 
 static_flags:   .res 256
 
+
+.data
+
+txt_welcome:    .byte $93, "VIC CP/M", 0
+
+
 .code
+
+.proc _main
+    lda #<txt_welcome
+    ldy #>txt_welcome
+    jsr $cb1e
+    jsr init8080
+    jsr make_flags
+    rts
+.endproc
 
 .proc next
     rts
@@ -81,10 +99,6 @@ static_flags:   .res 256
 .endproc
 
 .proc write_word_call
-    rts
-.endproc
-
-.proc _main
     rts
 .endproc
 
