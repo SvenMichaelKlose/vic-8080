@@ -1878,14 +1878,65 @@ n:  inc sp+1
     jmp cond_call
 .endproc
 
+.proc rst
+    sta v
+    dec sp
+    ldx sp  ; -1?
+    inx
+    bne n2
+n:  ldx #sp
+    ldy #pc
+    jsr write_word_call
+    lda v
+    sta pc
+    lda #0
+    sta pc+1
+    jmp next_rebanked
+n2: dec sp+1
+    jmp n
+.endproc
+
+
 ;case 0xC7: i8080_call(c, 0x00); break; // RST 0
+.proc op_c7
+    lda #$00
+    jmp cond_call
+.endproc
 ;case 0xCF: i8080_call(c, 0x08); break; // RST 1
+.proc op_cf
+    lda #$08
+    jmp cond_call
+.endproc
 ;case 0xD7: i8080_call(c, 0x10); break; // RST 2
+.proc op_d7
+    lda #$10
+    jmp cond_call
+.endproc
 ;case 0xDF: i8080_call(c, 0x18); break; // RST 3
+.proc op_df
+    lda #$18
+    jmp cond_call
+.endproc
 ;case 0xE7: i8080_call(c, 0x20); break; // RST 4
+.proc op_e7
+    lda #$20
+    jmp cond_call
+.endproc
 ;case 0xEF: i8080_call(c, 0x28); break; // RST 5
+.proc op_ef
+    lda #$28
+    jmp cond_call
+.endproc
 ;case 0xF7: i8080_call(c, 0x30); break; // RST 6
+.proc op_f7
+    lda #$30
+    jmp cond_call
+.endproc
 ;case 0xFF: i8080_call(c, 0x38); break; // RST 7
+.proc op_ff
+    lda #$38
+    jmp cond_call
+.endproc
 
 ;// stack operation instructions
 ;case 0xC5: i8080_push_stack(c, i8080_get_bc(c)); break; // PUSH B
