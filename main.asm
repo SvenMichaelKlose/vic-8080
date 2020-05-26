@@ -2120,9 +2120,9 @@ n3: dey
 
     ; Sign flags
     ldx #127
-n4: lda static_flags,x
+n4: lda static_flags+128,x
     ora #FLAG_S
-    sta static_flags,x
+    sta static_flags+128,x
     dex
     bpl n4
 
