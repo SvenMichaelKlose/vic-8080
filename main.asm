@@ -13,7 +13,7 @@ FLAG_C  = $01
 
 register_start:
 pc:     .res 2
-a:      .res 1
+accu:   .res 1
 flags:  .res 1
 bc:
 b:      .res 1
@@ -25,7 +25,7 @@ hl:
 h:      .res 1
 l:      .res 1
 sp:     .res 2
-flag_i  .res 1
+flag_i: .res 1
 register_end:
 
 v:      .res 2
@@ -35,50 +35,59 @@ tmp:    .res 1
 
 static_flags:   .res 256
 
-.proc make_flags
-    ; Parity flags
-    ldx #0
-n:  stx tmp
-    lda #0
-    ldy #8
-n2: asl tmp
-    bcc n3
-    eor #FLAG_P
-n3: dey
-    bne n2
-    sta static_flags,x
-    inx
-    bne n
-
-    ; Zero flag
-    lda #FLAG_Z
-    sta static_flags
-
-    ; Sign flags
-    ldx #127
-n4: lda static_flags,x
-    ora #FLAG_S
-    sta static_flags,x
-    dex
-    bpl n4
-
-    rts
-.endproc
-
-.proc init8080
-    lda #0
-    ldx #register_end-register_start-1
-n:  sta register_start,x
-    dex
-    bpl n
-    rts
-.endproc
-
 .code
+
+.proc next
+    rts
+.endproc
+
+.proc next_rebanked
+    rts
+.endproc
+
+.proc fetch_byte
+    rts
+.endproc
+
+.proc fetch_word
+    rts
+.endproc
+
+.proc fetch_word_y
+    rts
+.endproc
+
+.proc read_byte
+    rts
+.endproc
+
+.proc read_byte_y
+    rts
+.endproc
+
+.proc read_word
+    rts
+.endproc
+
+.proc write_byte
+    rts
+.endproc
+
+.proc write_word
+    rts
+.endproc
+
+.proc write_word_call
+    rts
+.endproc
+
+.proc _main
+    rts
+.endproc
 
 .proc get_flags
     lda flags
-    and #~(FLAG_Z | FLAG_S | FLAG_P)
+    and #(FLAG_Z + FLAG_S + FLAG_P) ^ $ff
     ldy v
     ora static_flags,y
     sta flags
@@ -87,7 +96,7 @@ n:  sta register_start,x
 
 .proc get_logic_flags
     lda flags
-    and #~(FLAG_Z | FLAG_S | FLAG_P | FLAG_C | FLAG_H)
+    and #(FLAG_Z | FLAG_S | FLAG_P | FLAG_C | FLAG_H) ^ $ff
     ldy v
     ora static_flags,y
     sta flags
@@ -97,7 +106,7 @@ n:  sta register_start,x
 .proc set_halfcarry
     sta tmp
     lda flags
-    and #~FLAG_H
+    and #FLAG_H ^ $ff
     ldx tmp
     bne n
     ora #FLAG_H
@@ -105,7 +114,15 @@ n:  sta flags
     rts
 .endproc
 
-.proc push
+.proc set_halfcarry_inv
+    jsr set_halfcarry
+    lda flags
+    eor #FLAG_H ^ $ff
+    sta flags
+    rts
+.endproc
+
+.proc push8080
     dec sp
     ldx sp  ; -1?
     inx
@@ -117,7 +134,7 @@ n2: dec sp+1
     jmp n
 .endproc
 
-.proc pop
+.proc pop8080
     ldx #sp
     ;ldy #v
     jsr read_word
@@ -155,8 +172,8 @@ n:  inc sp+1
 ;     return result;
 ; }
 .proc inr
-    inc 0,y
-    lda 0,y
+    inc 0,x
+    lda 0,x
     sta v
     and #$0f
     jsr set_halfcarry_inv
@@ -171,8 +188,8 @@ n:  inc sp+1
 ;     return result;
 ; }
 .proc dcr
-    dec 0,y
-    lda 0,y
+    dec 0,x
+    lda 0,x
     sta v
     and #$0f
     cmp #$0f
@@ -190,19 +207,19 @@ n:  inc sp+1
 ;     c->a = result;
 ; }
 .proc ana
-    lda a
+    lda accu
     tax
-    and 0,y
-    sta a
+    and 0,x
+    sta accu
     sta v
     txa
-    ora 0,y
+    ora 0,x
     and #$08
     jsr set_halfcarry
     lda flags
-    and #~FLAG_C
+    and #FLAG_C ^ $ff
     sta flags
-    jmp get_flags_y
+    jmp get_flags
 .endproc
 
 ; // executes a logic "xor" between register A and a byte, then stores the
@@ -214,9 +231,9 @@ n:  inc sp+1
 ;     SET_ZSP(c, c->a);
 ; }
 .proc xra
-    lda a
+    lda accu
     eor 0,x
-    sta a
+    sta accu
     jmp get_logic_flags
 .endproc
 
@@ -229,9 +246,9 @@ n:  inc sp+1
 ;     SET_ZSP(c, c->a);
 ; }
 .proc ora8080
-    lda a
+    lda accu
     ora 0,x
-    sta a
+    sta accu
     jmp get_logic_flags
 .endproc
 
@@ -245,9 +262,9 @@ n:  inc sp+1
 ;    *reg = result;
 ;}
 .proc adr8080
-    lda a
+    lda accu
     adc 0,x
-    sta a
+    sta accu
 
     rol flags   ; Set carry
 
@@ -264,12 +281,23 @@ n:  inc sp+1
 .proc add8080
     lsr flags       ; Clear carry flag.
     clc
-    jmp addr8080
+    jmp adr8080
 .endproc
 
 .proc adc8080
     lsr flags       ; Get and clear carry flag.
-    jmp addr8080
+    jmp adr8080
+.endproc
+
+.proc sub8080
+    lsr flags       ; Clear carry flag.
+    clc
+    jmp adr8080
+.endproc
+
+.proc sbb8080
+    lsr flags       ; Get and clear carry flag.
+    jmp adr8080
 .endproc
 
 ; // compares the register A to another byte
@@ -280,18 +308,19 @@ n:  inc sp+1
 ;     SET_ZSP(c, result & 0xFF);
 ; }
 .proc cmp8080
-    lda a
+    lsr flags
+    lda accu
     sec
     sbc 0,x
-    sta tmp
-    tay
-    jsr set_carry
-    lda a
+    sta v
+    rol flags
+
+    lda accu
     eor tmp
     eor 0,x
     and #$10
-    jsr set_half_carry
-    jmp get_flags_y
+    jsr set_halfcarry
+    jmp get_flags
 .endproc
 
 ; // sets the program counter to a given address
@@ -336,26 +365,26 @@ n:  inc sp+1
 ;    }
 ;}
 
-/ Decimal Adjust Accumulator: the eight-bit number in register A is adjusted
-// to form two four-bit binary-coded-decimal digits.
-// For example, if A=$2B and DAA is executed, A becomes $31.
-static inline void i8080_daa(i8080* const c) {
-    bool cy = c->cf;
-    uint8_t correction = 0;
-
-    const uint8_t lsb = c->a & 0x0F;
-    const uint8_t msb = c->a >> 4;
-
-    if (c->hf || lsb > 9) {
-        correction += 0x06;
-    }
-    if (c->cf || msb > 9 || (msb >= 9 && lsb > 9)) {
-        correction += 0x60;
-        cy = 1;
-    }
-    i8080_add(c, &c->a, correction, 0);
-    c->cf = cy;
-}
+;// Decimal Adjust Accumulator: the eight-bit number in register A is adjusted
+;// to form two four-bit binary-coded-decimal digits.
+;// For example, if A=$2B and DAA is executed, A becomes $31.
+;static inline void i8080_daa(i8080* const c) {
+;    bool cy = c->cf;
+;    uint8_t correction = 0;
+;
+;    const uint8_t lsb = c->a & 0x0F;
+;    const uint8_t msb = c->a >> 4;
+;
+;    if (c->hf || lsb > 9) {
+;        correction += 0x06;
+;    }
+;    if (c->cf || msb > 9 || (msb >= 9 && lsb > 9)) {
+;        correction += 0x60;
+;        cy = 1;
+;    }
+;    i8080_add(c, &c->a, correction, 0);
+;    c->cf = cy;
+;}
 
 ;// 8 bit transfer instructions
 ;case 0x7F: c->a = c->a; break; // MOV A,A
@@ -363,42 +392,42 @@ static inline void i8080_daa(i8080* const c) {
 ;case 0x78: c->a = c->b; break; // MOV A,B
 .proc op_78
     lda b
-    sta a
+    sta accu
     jmp next
 .endproc
 
 ;case 0x79: c->a = c->c; break; // MOV A,C
 .proc op_79
     lda c
-    sta a
+    sta accu
     jmp next
 .endproc
 
 ;case 0x7A: c->a = c->d; break; // MOV A,D
 .proc op_7a
     lda d
-    sta a
+    sta accu
     jmp next
 .endproc
 
 ;case 0x7B: c->a = c->e; break; // MOV A,E
 .proc op_7b
     lda e
-    sta a
+    sta accu
     jmp next
 .endproc
 
 ;case 0x7C: c->a = c->h; break; // MOV A,H
 .proc op_7c
     lda h
-    sta a
+    sta accu
     jmp next
 .endproc
 
 ;case 0x7D: c->a = c->l; break; // MOV A,L
 .proc op_7d
     lda l
-    sta a
+    sta accu
     jmp next
 .endproc
 
@@ -406,7 +435,7 @@ static inline void i8080_daa(i8080* const c) {
 .proc op_7e
     ldy #hl
     jsr read_byte
-    sta a
+    sta accu
     jmp next
 .endproc
 
@@ -414,7 +443,7 @@ static inline void i8080_daa(i8080* const c) {
 .proc op_0a
     ldy #bc
     jsr read_byte
-    sta a
+    sta accu
     jmp next
 .endproc
 
@@ -422,7 +451,7 @@ static inline void i8080_daa(i8080* const c) {
 .proc op_1a
     ldy #de
     jsr read_byte
-    sta a
+    sta accu
     jmp next
 .endproc
 
@@ -431,13 +460,13 @@ static inline void i8080_daa(i8080* const c) {
     jsr fetch_word
     ldy #v
     jsr read_byte
-    sta a
+    sta accu
     jmp next
 .endproc
 
 ;case 0x47: c->b = c->a; break; // MOV B,A
-.proc op_7d
-    lda a
+.proc op_47
+    lda accu
     sta b
     jmp next
 .endproc
@@ -445,37 +474,37 @@ static inline void i8080_daa(i8080* const c) {
 ;case 0x40: c->b = c->b; break; // MOV B,B
 
 ;case 0x41: c->b = c->c; break; // MOV B,C
-.proc op_7d
+.proc op_41
     lda c
     sta b
     jmp next
 .endproc
 ;case 0x42: c->b = c->d; break; // MOV B,D
-.proc op_7d
+.proc op_42
     lda d
     sta b
     jmp next
 .endproc
 ;case 0x43: c->b = c->e; break; // MOV B,E
-.proc op_7d
+.proc op_43
     lda e
     sta b
     jmp next
 .endproc
 ;case 0x44: c->b = c->h; break; // MOV B,H
-.proc op_7d
+.proc op_44
     lda h
     sta b
     jmp next
 .endproc
 ;case 0x45: c->b = c->l; break; // MOV B,L
-.proc op_7d
+.proc op_45
     lda l
     sta b
     jmp next
 .endproc
 ;case 0x46: c->b = i8080_rb(c, i8080_get_hl(c)); break; // MOV B,M
-.proc op_7e
+.proc op_46
     ldy #hl
     jsr read_byte
     sta b
@@ -484,14 +513,14 @@ static inline void i8080_daa(i8080* const c) {
 
 
 ;case 0x4F: c->c = c->a; break; // MOV C,A
-.proc op_7d
-    lda a
+.proc op_4f
+    lda accu
     sta c
     jmp next
 .endproc
 
 ;case 0x48: c->c = c->b; break; // MOV C,B
-.proc op_7d
+.proc op_48
     lda b
     sta c
     jmp next
@@ -500,35 +529,35 @@ static inline void i8080_daa(i8080* const c) {
 ;case 0x49: c->c = c->c; break; // MOV C,C
 
 ;case 0x4A: c->c = c->d; break; // MOV C,D
-.proc op_7d
+.proc op_4a
     lda d
     sta c
     jmp next
 .endproc
 
 ;case 0x4B: c->c = c->e; break; // MOV C,E
-.proc op_7d
+.proc op_4b
     lda e
     sta c
     jmp next
 .endproc
 
 ;case 0x4C: c->c = c->h; break; // MOV C,H
-.proc op_7d
+.proc op_4c
     lda h
     sta c
     jmp next
 .endproc
 
 ;case 0x4D: c->c = c->l; break; // MOV C,L
-.proc op_7d
+.proc op_4d
     lda l
     sta c
     jmp next
 .endproc
 
 ;case 0x4E: c->c = i8080_rb(c, i8080_get_hl(c)); break; // MOV C,M
-.proc op_7e
+.proc op_4e
     ldy #hl
     jsr read_byte
     sta c
@@ -536,19 +565,19 @@ static inline void i8080_daa(i8080* const c) {
 .endproc
 
 ;case 0x57: c->d = c->a; break; // MOV D,A
-.proc op_7d
-    lda a
+.proc op_57
+    lda accu
     sta d
     jmp next
 .endproc
 ;case 0x50: c->d = c->b; break; // MOV D,B
-.proc op_7d
+.proc op_50
     lda b
     sta d
     jmp next
 .endproc
 ;case 0x51: c->d = c->c; break; // MOV D,C
-.proc op_7d
+.proc op_51
     lda c
     sta d
     jmp next
@@ -557,25 +586,25 @@ static inline void i8080_daa(i8080* const c) {
 ;case 0x52: c->d = c->d; break; // MOV D,D
 
 ;case 0x53: c->d = c->e; break; // MOV D,E
-.proc op_7d
+.proc op_53
     lda e
     sta d
     jmp next
 .endproc
 ;case 0x54: c->d = c->h; break; // MOV D,H
-.proc op_7d
+.proc op_54
     lda h
     sta d
     jmp next
 .endproc
 ;case 0x55: c->d = c->l; break; // MOV D,L
-.proc op_7d
+.proc op_55
     lda l
     sta d
     jmp next
 .endproc
 ;case 0x56: c->d = i8080_rb(c, i8080_get_hl(c)); break; // MOV D,M
-.proc op_7e
+.proc op_56
     ldy #hl
     jsr read_byte
     sta d
@@ -583,44 +612,44 @@ static inline void i8080_daa(i8080* const c) {
 .endproc
 
 ;case 0x5F: c->e = c->a; break; // MOV E,A
-.proc op_7d
-    lda a
+.proc op_5f
+    lda accu
     sta e
     jmp next
 .endproc
 ;case 0x58: c->e = c->b; break; // MOV E,B
-.proc op_7d
+.proc op_58
     lda b
     sta e
     jmp next
 .endproc
 ;case 0x59: c->e = c->c; break; // MOV E,C
-.proc op_7d
+.proc op_59
     lda c
     sta e
     jmp next
 .endproc
 ;case 0x5A: c->e = c->d; break; // MOV E,D
-.proc op_7d
+.proc op_5a
     lda d
     sta e
     jmp next
 .endproc
 ;case 0x5B: c->e = c->e; break; // MOV E,E
 ;case 0x5C: c->e = c->h; break; // MOV E,H
-.proc op_7d
+.proc op_5c
     lda h
     sta e
     jmp next
 .endproc
 ;case 0x5D: c->e = c->l; break; // MOV E,L
-.proc op_7d
+.proc op_5d
     lda l
     sta e
     jmp next
 .endproc
 ;case 0x5E: c->e = i8080_rb(c, i8080_get_hl(c)); break; // MOV E,M
-.proc op_7e
+.proc op_5e
     ldy #hl
     jsr read_byte
     sta e
@@ -628,44 +657,44 @@ static inline void i8080_daa(i8080* const c) {
 .endproc
 
 ;case 0x67: c->h = c->a; break; // MOV H,A
-.proc op_7d
-    lda a
+.proc op_67
+    lda accu
     sta h
     jmp next
 .endproc
 ;case 0x60: c->h = c->b; break; // MOV H,B
-.proc op_7d
+.proc op_60
     lda b
     sta h
     jmp next
 .endproc
 ;case 0x61: c->h = c->c; break; // MOV H,C
-.proc op_7d
+.proc op_61
     lda c
     sta h
     jmp next
 .endproc
 ;case 0x62: c->h = c->d; break; // MOV H,D
-.proc op_7d
+.proc op_62
     lda d
     sta h
     jmp next
 .endproc
 ;case 0x63: c->h = c->e; break; // MOV H,E
-.proc op_7d
+.proc op_63
     lda e
     sta h
     jmp next
 .endproc
 ;case 0x64: c->h = c->h; break; // MOV H,H
 ;case 0x65: c->h = c->l; break; // MOV H,L
-.proc op_7d
+.proc op_65
     lda l
     sta h
     jmp next
 .endproc
 ;case 0x66: c->h = i8080_rb(c, i8080_get_hl(c)); break; // MOV H,M
-.proc op_7e
+.proc op_66
     ldy #hl
     jsr read_byte
     sta h
@@ -673,44 +702,44 @@ static inline void i8080_daa(i8080* const c) {
 .endproc
 
 ;case 0x6F: c->l = c->a; break; // MOV L,A
-.proc op_7d
-    lda a
+.proc op_6f
+    lda accu
     sta l
     jmp next
 .endproc
 ;case 0x68: c->l = c->b; break; // MOV L,B
-.proc op_7d
+.proc op_68
     lda b
     sta l
     jmp next
 .endproc
 ;case 0x69: c->l = c->c; break; // MOV L,C
-.proc op_7d
+.proc op_69
     lda c
     sta l
     jmp next
 .endproc
 ;case 0x6A: c->l = c->d; break; // MOV L,D
-.proc op_7d
+.proc op_6a
     lda d
     sta l
     jmp next
 .endproc
 ;case 0x6B: c->l = c->e; break; // MOV L,E
-.proc op_7d
+.proc op_6b
     lda e
     sta l
     jmp next
 .endproc
 ;case 0x6C: c->l = c->h; break; // MOV L,H
-.proc op_7d
+.proc op_6c
     lda h
     sta l
     jmp next
 .endproc
 ;case 0x6D: c->l = c->l; break; // MOV L,L
 ;case 0x6E: c->l = i8080_rb(c, i8080_get_hl(c)); break; // MOV L,M
-.proc op_7e
+.proc op_6e
     ldy #hl
     jsr read_byte
     sta l
@@ -719,87 +748,87 @@ static inline void i8080_daa(i8080* const c) {
 
 ;case 0x77: i8080_wb(c, i8080_get_hl(c), c->a); break; // MOV M,A
 .proc op_77
-    lda a
+    lda accu
     ldy #hl
     jmp write_byte
 .endproc
 ;case 0x70: i8080_wb(c, i8080_get_hl(c), c->b); break; // MOV M,B
-.proc op_77
+.proc op_70
     lda b
     ldy #hl
     jmp write_byte
 .endproc
 ;case 0x71: i8080_wb(c, i8080_get_hl(c), c->c); break; // MOV M,C
-.proc op_77
+.proc op_71
     lda c
     ldy #hl
     jmp write_byte
 .endproc
 ;case 0x72: i8080_wb(c, i8080_get_hl(c), c->d); break; // MOV M,D
-.proc op_77
+.proc op_72
     lda d
     ldy #hl
     jmp write_byte
 .endproc
 ;case 0x73: i8080_wb(c, i8080_get_hl(c), c->e); break; // MOV M,E
-.proc op_77
+.proc op_73
     lda e
     ldy #hl
     jmp write_byte
 .endproc
 ;case 0x74: i8080_wb(c, i8080_get_hl(c), c->h); break; // MOV M,H
-.proc op_77
+.proc op_74
     lda h
     ldy #hl
     jmp write_byte
 .endproc
 ;case 0x75: i8080_wb(c, i8080_get_hl(c), c->l); break; // MOV M,L
-.proc op_77
+.proc op_75
     lda l
     ldy #hl
     jmp write_byte
 .endproc
 
 ;case 0x3E: c->a = i8080_next_byte(c); break; // MVI A,byte
-.proc op_77
+.proc op_3e
     jsr fetch_byte
-    sta a
+    sta accu
     jmp next
 .endproc
 ;case 0x06: c->b = i8080_next_byte(c); break; // MVI B,byte
-.proc op_77
+.proc op_06
     jsr fetch_byte
-    sta a
+    sta accu
     jmp next
 .endproc
 ;case 0x0E: c->c = i8080_next_byte(c); break; // MVI C,byte
-.proc op_77
+.proc op_0e
     jsr fetch_byte
-    sta a
+    sta accu
     jmp next
 .endproc
 ;case 0x16: c->d = i8080_next_byte(c); break; // MVI D,byte
-.proc op_77
+.proc op_16
     jsr fetch_byte
-    sta a
+    sta accu
     jmp next
 .endproc
 ;case 0x1E: c->e = i8080_next_byte(c); break; // MVI E,byte
-.proc op_77
+.proc op_1e
     jsr fetch_byte
-    sta a
+    sta accu
     jmp next
 .endproc
 ;case 0x26: c->h = i8080_next_byte(c); break; // MVI H,byte
-.proc op_77
+.proc op_26
     jsr fetch_byte
-    sta a
+    sta accu
     jmp next
 .endproc
 ;case 0x2E: c->l = i8080_next_byte(c); break; // MVI L,byte
-.proc op_77
+.proc op_2e
     jsr fetch_byte
-    sta a
+    sta accu
     jmp next
 .endproc
 
@@ -812,22 +841,22 @@ static inline void i8080_daa(i8080* const c) {
 
 ;case 0x02: i8080_wb(c, i8080_get_bc(c), c->a); break; // STAX B
 .proc op_02
-    lda a
+    lda accu
     ldy #bc
     jmp write_byte
 .endproc
 
 ;case 0x12: i8080_wb(c, i8080_get_de(c), c->a); break; // STAX D
-.proc op_02
-    lda a
+.proc op_12
+    lda accu
     ldy #de
     jmp write_byte
 .endproc
 
 ;case 0x32: i8080_wb(c, i8080_next_word(c), c->a); break; // STA word
-.proc op_02
+.proc op_32
     jsr fetch_word
-    lda a
+    lda accu
     ldy #v
     jmp write_byte
 .endproc
@@ -836,23 +865,23 @@ static inline void i8080_daa(i8080* const c) {
 ;case 0x01: i8080_set_bc(c, i8080_next_word(c)); break; // LXI B,word
 .proc op_01
     ldy #bc
-    jmp fetch_word_zp
+    jmp fetch_word_y
 .endproc
 
 ;case 0x11: i8080_set_de(c, i8080_next_word(c)); break; // LXI D,word
 .proc op_11
     ldy #de
-    jmp fetch_word_zp
+    jmp fetch_word_y
 .endproc
 ;case 0x21: i8080_set_hl(c, i8080_next_word(c)); break; // LXI H,word
 .proc op_21
     ldy #hl
-    jmp fetch_word_zp
+    jmp fetch_word_y
 .endproc
 ;case 0x31: c->sp = i8080_next_word(c); break; // LXI SP,word
-.proc op_21
+.proc op_31
     ldy #sp
-    jmp fetch_word_zp
+    jmp fetch_word_y
 .endproc
 ;case 0x2A: i8080_set_hl(c, i8080_rw(c, i8080_next_word(c))); break; // LHLD
 .proc op_2a
@@ -887,7 +916,7 @@ static inline void i8080_daa(i8080* const c) {
 ;    i8080_set_de(c, i8080_get_hl(c));
 ;    i8080_set_hl(c, de);
 ;}
-.proc xchg
+.proc op_eb
     lda d
     ldx h
     sta h
@@ -910,37 +939,37 @@ static inline void i8080_daa(i8080* const c) {
 ;// add byte instructions
 ;case 0x87: i8080_add(c, &c->a, c->a, 0); break; // ADD A
 .proc op_87
-    ldx #a
+    ldx #accu
     jmp add8080
 .endproc
     
 ;case 0x80: i8080_add(c, &c->a, c->b, 0); break; // ADD B
-.proc op_87
+.proc op_80
     ldx #b
     jmp add8080
 .endproc
 ;case 0x81: i8080_add(c, &c->a, c->c, 0); break; // ADD C
-.proc op_87
+.proc op_81
     ldx #c
     jmp add8080
 .endproc
 ;case 0x82: i8080_add(c, &c->a, c->d, 0); break; // ADD D
-.proc op_87
+.proc op_82
     ldx #d
     jmp add8080
 .endproc
 ;case 0x83: i8080_add(c, &c->a, c->e, 0); break; // ADD E
-.proc op_87
+.proc op_83
     ldx #e
     jmp add8080
 .endproc
 ;case 0x84: i8080_add(c, &c->a, c->h, 0); break; // ADD H
-.proc op_87
+.proc op_84
     ldx #h
     jmp add8080
 .endproc
 ;case 0x85: i8080_add(c, &c->a, c->l, 0); break; // ADD L
-.proc op_87
+.proc op_85
     ldx #l
     jmp add8080
 .endproc
@@ -953,7 +982,7 @@ static inline void i8080_daa(i8080* const c) {
     jmp add8080
 .endproc
 ;case 0xC6: i8080_add(c, &c->a, i8080_next_byte(c), 0); break; // ADI byte
-.proc op_86
+.proc op_c6
     jsr fetch_byte
     ldx #v
     jmp add8080
@@ -961,43 +990,43 @@ static inline void i8080_daa(i8080* const c) {
 
 ;// add byte with carry-in instructions
 ;case 0x8F: i8080_add(c, &c->a, c->a, c->cf); break; // ADC A
-.proc op_87
-    ldx #a
+.proc op_8f
+    ldx #accu
     jmp adc8080
 .endproc
 ;case 0x88: i8080_add(c, &c->a, c->b, c->cf); break; // ADC B
-.proc op_87
+.proc op_88
     ldx #b
     jmp adc8080
 .endproc
 ;case 0x89: i8080_add(c, &c->a, c->c, c->cf); break; // ADC C
-.proc op_87
+.proc op_89
     ldx #c
     jmp adc8080
 .endproc
 ;case 0x8A: i8080_add(c, &c->a, c->d, c->cf); break; // ADC D
-.proc op_87
+.proc op_8a
     ldx #d
     jmp adc8080
 .endproc
 ;case 0x8B: i8080_add(c, &c->a, c->e, c->cf); break; // ADC E
-.proc op_87
+.proc op_8b
     ldx #e
     jmp adc8080
 .endproc
 ;case 0x8C: i8080_add(c, &c->a, c->h, c->cf); break; // ADC H
-.proc op_87
+.proc op_8c
     ldx #h
     jmp adc8080
 .endproc
 ;case 0x8D: i8080_add(c, &c->a, c->l, c->cf); break; // ADC L
-.proc op_87
+.proc op_8d
     ldx #l
     jmp adc8080
 .endproc
 
 ;case 0x8E: i8080_add(c, &c->a, i8080_rb(c, i8080_get_hl(c)), c->cf); break; // ADC M
-.proc op_86
+.proc op_8e
     ldy #hl
     jsr read_byte_y
     sta v
@@ -1005,7 +1034,7 @@ static inline void i8080_daa(i8080* const c) {
     jmp adc8080
 .endproc
 ;case 0xCE: i8080_add(c, &c->a, i8080_next_byte(c), c->cf); break; // ACI byte
-.proc op_86
+.proc op_ce
     jsr fetch_byte
     ldx #v
     jmp adc8080
@@ -1013,42 +1042,42 @@ static inline void i8080_daa(i8080* const c) {
 
 ;// substract byte instructions
 ;case 0x97: i8080_sub(c, &c->a, c->a, 0); break; // SUB A
-.proc op_87
-    ldx #a
+.proc op_97
+    ldx #accu
     jmp sub8080
 .endproc
 ;case 0x90: i8080_sub(c, &c->a, c->b, 0); break; // SUB B
-.proc op_87
+.proc op_90
     ldx #b
     jmp sub8080
 .endproc
 ;case 0x91: i8080_sub(c, &c->a, c->c, 0); break; // SUB C
-.proc op_87
+.proc op_91
     ldx #c
     jmp sub8080
 .endproc
 ;case 0x92: i8080_sub(c, &c->a, c->d, 0); break; // SUB D
-.proc op_87
+.proc op_92
     ldx #d
     jmp sub8080
 .endproc
 ;case 0x93: i8080_sub(c, &c->a, c->e, 0); break; // SUB E
-.proc op_87
+.proc op_93
     ldx #e
     jmp sub8080
 .endproc
 ;case 0x94: i8080_sub(c, &c->a, c->h, 0); break; // SUB H
-.proc op_87
+.proc op_94
     ldx #h
     jmp sub8080
 .endproc
 ;case 0x95: i8080_sub(c, &c->a, c->l, 0); break; // SUB L
-.proc op_87
+.proc op_95
     ldx #l
     jmp sub8080
 .endproc
 ;case 0x96: i8080_sub(c, &c->a, i8080_rb(c, i8080_get_hl(c)), 0); break; // SUB M
-.proc op_86
+.proc op_96
     ldx #hl
     jsr read_byte_y
     sta v
@@ -1056,50 +1085,50 @@ static inline void i8080_daa(i8080* const c) {
     jmp sub8080
 .endproc
 ;case 0xD6: i8080_sub(c, &c->a, i8080_next_byte(c), 0); break; // SUI byte
-.proc op_86
+.proc op_d6
     jsr fetch_byte
     ldx #v
     jmp sub8080
 .endproc
 
-// substract byte with borrow-in instructions
+;// substract byte with borrow-in instructions
 ;case 0x9F: i8080_sub(c, &c->a, c->a, c->cf); break; // SBB A
-.proc op_87
-    ldx #a
+.proc op_9f
+    ldx #accu
     jmp sbb8080
 .endproc
 ;case 0x98: i8080_sub(c, &c->a, c->b, c->cf); break; // SBB B
-.proc op_87
-    ldx #a
+.proc op_98
+    ldx #b
     jmp sbb8080
 .endproc
 ;case 0x99: i8080_sub(c, &c->a, c->c, c->cf); break; // SBB C
-.proc op_87
-    ldx #a
+.proc op_99
+    ldx #c
     jmp sbb8080
 .endproc
 ;case 0x9A: i8080_sub(c, &c->a, c->d, c->cf); break; // SBB D
-.proc op_87
-    ldx #a
+.proc op_9a
+    ldx #d
     jmp sbb8080
 .endproc
 ;case 0x9B: i8080_sub(c, &c->a, c->e, c->cf); break; // SBB E
-.proc op_87
-    ldx #a
+.proc op_9b
+    ldx #e
     jmp sbb8080
 .endproc
 ;case 0x9C: i8080_sub(c, &c->a, c->h, c->cf); break; // SBB H
-.proc op_87
-    ldx #a
+.proc op_9c
+    ldx #h
     jmp sbb8080
 .endproc
 ;case 0x9D: i8080_sub(c, &c->a, c->l, c->cf); break; // SBB L
-.proc op_87
-    ldx #a
+.proc op_9d
+    ldx #l
     jmp sbb8080
 .endproc
 ;case 0x9E: i8080_sub(c, &c->a, i8080_rb(c, i8080_get_hl(c)), c->cf); break; // SBB M
-.proc op_86
+.proc op_9e
     ldy #hl
     jsr read_byte_y
     sta v
@@ -1108,7 +1137,7 @@ static inline void i8080_daa(i8080* const c) {
 .endproc
 
 ;case 0xDE: i8080_sub(c, &c->a, i8080_next_byte(c), c->cf); break; // SBI byte
-.proc op_86
+.proc op_de
     jsr fetch_byte
     ldx #v
     jmp sbb8080
@@ -1121,17 +1150,17 @@ static inline void i8080_daa(i8080* const c) {
     jmp dad
 .endproc
 ;case 0x19: i8080_dad(c, i8080_get_de(c)); break; // DAD D
-.proc op_09
+.proc op_19
     ldy #de
     jmp dad
 .endproc
 ;case 0x29: i8080_dad(c, i8080_get_hl(c)); break; // DAD H
-.proc op_09
+.proc op_29
     ldy #hl
     jmp dad
 .endproc
 ;case 0x39: i8080_dad(c, c->sp); break; // DAD SP
-.proc op_09
+.proc op_39
     ldy #sp
     jmp dad
 .endproc
@@ -1158,43 +1187,43 @@ static inline void i8080_daa(i8080* const c) {
 ;// increment byte instructions
 ;case 0x3C: c->a = i8080_inr(c, c->a); break; // INR A
 .proc op_3c
-    ldy #a
+    ldy #accu
     jmp inr
 .endproc
 
 ;case 0x04: c->b = i8080_inr(c, c->b); break; // INR B
-.proc op_3c
+.proc op_04
     ldy #b
     jmp inr
 .endproc
 ;case 0x0C: c->c = i8080_inr(c, c->c); break; // INR C
-.proc op_3c
+.proc op_0c
     ldy #c
     jmp inr
 .endproc
 ;case 0x14: c->d = i8080_inr(c, c->d); break; // INR D
-.proc op_3c
+.proc op_14
     ldy #d
     jmp inr
 .endproc
 ;case 0x1C: c->e = i8080_inr(c, c->e); break; // INR E
-.proc op_3c
+.proc op_1c
     ldy #e
     jmp inr
 .endproc
 ;case 0x24: c->h = i8080_inr(c, c->h); break; // INR H
-.proc op_3c
+.proc op_24
     ldy #h
     jmp inr
 .endproc
 ;case 0x2C: c->l = i8080_inr(c, c->l); break; // INR L
-.proc op_3c
+.proc op_2c
     ldy #l
     jmp inr
 .endproc
 
 ;case 0x34: i8080_wb(c, i8080_get_hl(c), i8080_inr(c, i8080_rb(c, i8080_get_hl(c)))); break; // INR M
-.proc op_3c
+.proc op_34
     ldy #hl
     ldx #v
     jsr read_word
@@ -1210,37 +1239,37 @@ static inline void i8080_daa(i8080* const c) {
 
 ;// decrement byte instructions
 ;case 0x3D: c->a = i8080_dcr(c, c->a); break; // DCR A
-.proc op_3c
-    ldy #a
+.proc op_3d
+    ldy #accu
     jmp dcr
 .endproc
 ;case 0x05: c->b = i8080_dcr(c, c->b); break; // DCR B
-.proc op_3c
+.proc op_05
     ldy #b
     jmp dcr
 .endproc
 ;case 0x0D: c->c = i8080_dcr(c, c->c); break; // DCR C
-.proc op_3c
+.proc op_0d
     ldy #c
     jmp dcr
 .endproc
 ;case 0x15: c->d = i8080_dcr(c, c->d); break; // DCR D
-.proc op_3c
+.proc op_15
     ldy #d
     jmp dcr
 .endproc
 ;case 0x1D: c->e = i8080_dcr(c, c->e); break; // DCR E
-.proc op_3c
+.proc op_1d
     ldy #e
     jmp dcr
 .endproc
 ;case 0x25: c->h = i8080_dcr(c, c->h); break; // DCR H
-.proc op_3c
+.proc op_25
     ldy #h
     jmp dcr
 .endproc
 ;case 0x2D: c->l = i8080_dcr(c, c->l); break; // DCR L
-.proc op_3c
+.proc op_2d
     ldy #l
     jmp dcr
 .endproc
@@ -1258,7 +1287,7 @@ static inline void i8080_daa(i8080* const c) {
     jsr set_halfcarry
     jmp get_flags
 .endproc
-.
+
 ;// increment register pair instructions
 ;case 0x03: i8080_set_bc(c, i8080_get_bc(c) + 1); break; // INX B
 .proc op_03
@@ -1269,7 +1298,7 @@ n:  inc b
     jmp next
 .endproc
 ;case 0x13: i8080_set_de(c, i8080_get_de(c) + 1); break; // INX D
-.proc op_03
+.proc op_13
     inc e
     beq n
     jmp next
@@ -1277,7 +1306,7 @@ n:  inc d
     jmp next
 .endproc
 ;case 0x23: i8080_set_hl(c, i8080_get_hl(c) + 1); break; // INX H
-.proc op_03
+.proc op_23
     inc l
     beq n
     jmp next
@@ -1285,7 +1314,7 @@ n:  inc h
     jmp next
 .endproc
 ;case 0x33: c->sp += 1; break; // INX SP
-.proc op_03
+.proc op_33
     inc sp
     beq n
     jmp next
@@ -1295,7 +1324,7 @@ n:  inc sp+1
 
 ;// decrement register pair instructions
 ;case 0x0B: i8080_set_bc(c, i8080_get_bc(c) - 1); break; // DCX B
-.proc op_03
+.proc op_0b
     sec
     lda c
     sbc #1
@@ -1306,7 +1335,7 @@ n:  inc sp+1
     jmp next
 .endproc
 ;case 0x1B: i8080_set_de(c, i8080_get_de(c) - 1); break; // DCX D
-.proc op_03
+.proc op_1b
     sec
     lda e
     sbc #1
@@ -1317,7 +1346,7 @@ n:  inc sp+1
     jmp next
 .endproc
 ;case 0x2B: i8080_set_hl(c, i8080_get_hl(c) - 1); break; // DCX H
-.proc op_03
+.proc op_2b
     sec
     lda l
     sbc #1
@@ -1328,14 +1357,14 @@ n:  inc sp+1
     jmp next
 .endproc
 ;case 0x3B: c->sp -= 1; break; // DCX SP
-.proc op_03
+.proc op_3b
     sec
     lda sp
     sbc #1
     sta sp
-    lda so+1
+    lda sp+1
     sbc #0
-    sta so+1
+    sta sp+1
     jmp next
 .endproc
 
@@ -1344,9 +1373,9 @@ n:  inc sp+1
 
 ;case 0x2F: c->a = ~c->a; break; // CMA
 .proc op_2f
-    lda a
+    lda accu
     eor #$ff
-    sta a
+    sta accu
     jmp next
 .endproc
 
@@ -1359,7 +1388,7 @@ n:  inc sp+1
 .endproc
 
 ;case 0x3F: c->cf = !c->cf; break; // CMC
-.proc op_37
+.proc op_3f
     lda flags
     eor #FLAG_C
     sta flags
@@ -1375,13 +1404,13 @@ n:  inc sp+1
 ;}
 .proc op_07
     lsr flags
-    lda a
+    lda accu
     tax
     asl
     rol flags
     txa
     asl
-    rol a
+    rol accu
     jmp next
 .endproc
 
@@ -1391,15 +1420,15 @@ n:  inc sp+1
     ;c->cf = c->a & 1;
     ;c->a = (c->a >> 1) | (c->cf << 7);
 ;}
-.proc op_07
+.proc op_0f
     lsr flags
-    lda a
+    lda accu
     tax
     lsr
     rol flags
     txa
     lsr
-    ror a
+    ror accu
     jmp next
 .endproc
 
@@ -1410,9 +1439,9 @@ n:  inc sp+1
 ;    c->cf = c->a >> 7;
 ;    c->a = (c->a << 1) | cy;
 ;}
-.proc ral
+.proc op_17
     lsr flags
-    rol a
+    rol accu
     rol flags
     jmp next
 .endproc
@@ -1424,9 +1453,9 @@ n:  inc sp+1
 ;    c->cf = c->a & 1;
 ;    c->a = (c->a >> 1) | (cy << 7);
 ;}
-.proc rar
+.proc op_1f
     lsr flags
-    ror a
+    ror accu
     rol flags
     jmp next
 .endproc
@@ -1434,41 +1463,41 @@ n:  inc sp+1
 ;// logical byte instructions
 ;case 0xA7: i8080_ana(c, c->a); break; // ANA A
 .proc op_a7
-    ldx #a
+    ldx #accu
     jmp ana
 .endproc
 ;case 0xA0: i8080_ana(c, c->b); break; // ANA B
-.proc op_a7
+.proc op_a0
     ldx #b
     jmp ana
 .endproc
 ;case 0xA1: i8080_ana(c, c->c); break; // ANA C
-.proc op_a7
+.proc op_a1
     ldx #c
     jmp ana
 .endproc
 ;case 0xA2: i8080_ana(c, c->d); break; // ANA D
-.proc op_a7
+.proc op_a2
     ldx #d
     jmp ana
 .endproc
 ;case 0xA3: i8080_ana(c, c->e); break; // ANA E
-.proc op_a7
+.proc op_a3
     ldx #e
     jmp ana
 .endproc
 ;case 0xA4: i8080_ana(c, c->h); break; // ANA H
-.proc op_a7
+.proc op_a4
     ldx #h
     jmp ana
 .endproc
 ;case 0xA5: i8080_ana(c, c->l); break; // ANA L
-.proc op_a7
+.proc op_a5
     ldx #l
     jmp ana
 .endproc
 ;case 0xA6: i8080_ana(c, i8080_rb(c, i8080_get_hl(c))); break; // ANA M
-.proc op_a7
+.proc op_a6
     ldy #hl
     jsr read_byte
     sta v
@@ -1476,49 +1505,49 @@ n:  inc sp+1
     jmp ana
 .endproc
 ;case 0xE6: i8080_ana(c, i8080_next_byte(c)); break; // ANI byte
-.proc op_a7
+.proc op_e6
     jsr fetch_byte
     ldx #v
     jmp ana
 .endproc
 
 ;case 0xAF: i8080_xra(c, c->a); break; // XRA A
-.proc op_a7
-    ldx #a
+.proc op_af
+    ldx #accu
     jmp xra
 .endproc
 ;case 0xA8: i8080_xra(c, c->b); break; // XRA B
-.proc op_a7
+.proc op_a8
     ldx #b
     jmp xra
 .endproc
 ;case 0xA9: i8080_xra(c, c->c); break; // XRA C
-.proc op_a7
+.proc op_a9
     ldx #c
     jmp xra
 .endproc
 ;case 0xAA: i8080_xra(c, c->d); break; // XRA D
-.proc op_a7
+.proc op_aa
     ldx #d
     jmp xra
 .endproc
 ;case 0xAB: i8080_xra(c, c->e); break; // XRA E
-.proc op_a7
+.proc op_ab
     ldx #e
     jmp xra
 .endproc
 ;case 0xAC: i8080_xra(c, c->h); break; // XRA H
-.proc op_a7
+.proc op_ac
     ldx #h
     jmp xra
 .endproc
 ;case 0xAD: i8080_xra(c, c->l); break; // XRA L
-.proc op_a7
+.proc op_ad
     ldx #l
     jmp xra
 .endproc
 ;case 0xAE: i8080_xra(c, i8080_rb(c, i8080_get_hl(c))); break; // XRA M
-.proc op_a7
+.proc op_ae
     ldy #hl
     jsr read_byte
     sta v
@@ -1526,49 +1555,49 @@ n:  inc sp+1
     jmp xra
 .endproc
 ;case 0xEE: i8080_xra(c, i8080_next_byte(c)); break; // XRI byte
-.proc op_a7
+.proc op_ee
     jsr fetch_byte
     ldx #v
     jmp xra
 .endproc
 
 ;case 0xB7: i8080_ora(c, c->a); break; // ORA A
-.proc op_a7
-    ldx #a
+.proc op_b7
+    ldx #accu
     jmp ora8080
 .endproc
 ;case 0xB0: i8080_ora(c, c->b); break; // ORA B
-.proc op_a7
+.proc op_b0
     ldx #b
     jmp ora8080
 .endproc
 ;case 0xB1: i8080_ora(c, c->c); break; // ORA C
-.proc op_a7
+.proc op_b1
     ldx #c
     jmp ora8080
 .endproc
 ;case 0xB2: i8080_ora(c, c->d); break; // ORA D
-.proc op_a7
+.proc op_b2
     ldx #d
     jmp ora8080
 .endproc
 ;case 0xB3: i8080_ora(c, c->e); break; // ORA E
-.proc op_a7
+.proc op_b3
     ldx #e
     jmp ora8080
 .endproc
 ;case 0xB4: i8080_ora(c, c->h); break; // ORA H
-.proc op_a7
+.proc op_b4
     ldx #h
     jmp ora8080
 .endproc
 ;case 0xB5: i8080_ora(c, c->l); break; // ORA L
-.proc op_a7
+.proc op_b5
     ldx #l
     jmp ora8080
 .endproc
 ;case 0xB6: i8080_ora(c, i8080_rb(c, i8080_get_hl(c))); break; // ORA M
-.proc op_a7
+.proc op_b6
     ldy #hl
     jsr read_byte
     sta v
@@ -1576,49 +1605,49 @@ n:  inc sp+1
     jmp ora8080
 .endproc
 ;case 0xF6: i8080_ora(c, i8080_next_byte(c)); break; // ORI byte
-.proc op_a7
+.proc op_f6
     jsr fetch_byte
     ldx #v
     jmp ora8080
 .endproc
 
 ;case 0xBF: i8080_cmp(c, c->a); break; // CMP A
-.proc op_a7
-    ldx #a
+.proc op_bf
+    ldx #accu
     jmp cmp8080
 .endproc
 ;case 0xB8: i8080_cmp(c, c->b); break; // CMP B
-.proc op_a7
-    ldx #a
+.proc op_b8
+    ldx #b
     jmp cmp8080
 .endproc
 ;case 0xB9: i8080_cmp(c, c->c); break; // CMP C
-.proc op_a7
-    ldx #a
+.proc op_b9
+    ldx #c
     jmp cmp8080
 .endproc
 ;case 0xBA: i8080_cmp(c, c->d); break; // CMP D
-.proc op_a7
-    ldx #a
+.proc op_ba
+    ldx #d
     jmp cmp8080
 .endproc
 ;case 0xBB: i8080_cmp(c, c->e); break; // CMP E
-.proc op_a7
-    ldx #a
+.proc op_bb
+    ldx #e
     jmp cmp8080
 .endproc
 ;case 0xBC: i8080_cmp(c, c->h); break; // CMP H
-.proc op_a7
-    ldx #a
+.proc op_bc
+    ldx #h
     jmp cmp8080
 .endproc
 ;case 0xBD: i8080_cmp(c, c->l); break; // CMP L
-.proc op_a7
-    ldx #a
+.proc op_bd
+    ldx #l
     jmp cmp8080
 .endproc
 ;case 0xBE: i8080_cmp(c, i8080_rb(c, i8080_get_hl(c))); break; // CMP M
-.proc op_a7
+.proc op_be
     ldy #hl
     jsr read_byte
     sta v
@@ -1626,7 +1655,7 @@ n:  inc sp+1
     jmp cmp8080
 .endproc
 ;case 0xFE: i8080_cmp(c, i8080_next_byte(c)); break; // CPI byte
-.proc op_a7
+.proc op_fe
     jsr fetch_byte
     ldx #v
     jmp cmp8080
@@ -1641,6 +1670,7 @@ n:  inc sp+1
     lda v+1
     sta pc+1
     jmp next_rebanked
+.endproc
 
 ;case 0xC2: i8080_cond_jmp(c, c->zf == 0); break; // JNZ
 ;case 0xCA: i8080_cond_jmp(c, c->zf == 1); break; // JZ
@@ -1684,17 +1714,17 @@ n:  inc sp+1
 
 ;// stack operation instructions
 ;case 0xC5: i8080_push_stack(c, i8080_get_bc(c)); break; // PUSH B
-.proc op_a7
+.proc op_c5
     ldy #bc
     jmp push8080
 .endproc
 ;case 0xD5: i8080_push_stack(c, i8080_get_de(c)); break; // PUSH D
-.proc op_a7
+.proc op_d5
     ldy #de
     jmp push8080
 .endproc
 ;case 0xE5: i8080_push_stack(c, i8080_get_hl(c)); break; // PUSH H
-.proc op_a7
+.proc op_e5
     ldy #hl
     jmp push8080
 .endproc
@@ -1714,17 +1744,17 @@ n:  inc sp+1
 ;}
 
 ;case 0xC1: i8080_set_bc(c, i8080_pop_stack(c)); break; // POP B
-.proc op_a7
+.proc op_c1
     ldy #bc
     jmp pop8080
 .endproc
 ;case 0xD1: i8080_set_de(c, i8080_pop_stack(c)); break; // POP D
-.proc op_a7
+.proc op_d1
     ldy #bc
     jmp pop8080
 .endproc
 ;case 0xE1: i8080_set_hl(c, i8080_pop_stack(c)); break; // POP H
-.proc op_a7
+.proc op_e1
     ldy #bc
     jmp pop8080
 .endproc
@@ -1743,7 +1773,7 @@ n:  inc sp+1
 ;    c->cf = (psw >> 0) & 1;
 ;}
 
-// input/output instructions
+;// input/output instructions
 ;case 0xDB: // IN
     ;c->a = c->port_in(c->userdata, i8080_next_byte(c));
 ;break;
@@ -1760,7 +1790,7 @@ n:  inc sp+1
 
 ;// undocumented RET
 ;case 0xD9: i8080_ret(c); break;
-.proc op_ret
+.proc op_d9
     ldx #sp
     ldy #pc
     jsr read_word
@@ -1771,9 +1801,9 @@ n:  inc sp+1
     jmp next_rebanked
 .endproc
 
-// undocumented CALLs
+;// undocumented CALLs
 ;case 0xDD: case 0xED: case 0xFD: i8080_call(c, i8080_next_word(c));
-.proc op_call
+.proc op_dd
     dec sp
     ldx sp  ; -1?
     inx
@@ -1790,8 +1820,47 @@ n2: dec sp+1
 
 ;// undocumented JMP
 ;case 0xCB: i8080_jmp(c, i8080_next_word(c)); break;
-.proc op_jmp
+.proc op_cb
     ldy #pc
     jsr fetch_word_y
     jmp next_rebanked
+.endproc
+
+.proc make_flags
+    ; Parity flags
+    ldx #0
+n:  stx tmp
+    lda #0
+    ldy #8
+n2: asl tmp
+    bcc n3
+    eor #FLAG_P
+n3: dey
+    bne n2
+    sta static_flags,x
+    inx
+    bne n
+
+    ; Zero flag
+    lda #FLAG_Z
+    sta static_flags
+
+    ; Sign flags
+    ldx #127
+n4: lda static_flags,x
+    ora #FLAG_S
+    sta static_flags,x
+    dex
+    bpl n4
+
+    rts
+.endproc
+
+.proc init8080
+    lda #0
+    ldx #register_end-register_start-1
+n:  sta register_start,x
+    dex
+    bpl n
+    rts
 .endproc
