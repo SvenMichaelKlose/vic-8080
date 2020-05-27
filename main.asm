@@ -1810,6 +1810,13 @@ n:  jmp next_rebanked
 .endproc
 
 ;case 0xE9: c->pc = i8080_get_hl(c); break; // PCHL
+.proc op_e9
+    lda l
+    sta c
+    lda h
+    sta pc+1
+    jmp next_rebanked
+.endproc
 
 ;case 0xCD: i8080_call(c, i8080_next_word(c)); break; // CALL
 ;// undocumented CALLs
