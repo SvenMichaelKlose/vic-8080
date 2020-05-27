@@ -22,4 +22,4 @@ $(PROGRAM): $(SOURCES:.c=.o) $(ASMSOURCES:.asm=.o)
 all: $(PROGRAM)
 
 clean:
-	rm -f $(ASMSOURCES:.asm=.o) $(SOURCES:.c=.o) $(PROGRAM) $(PROGRAM).lst
+	rm -f $(ASMSOURCES:.asm=.o) $(SOURCES:.c=.o) $(PROGRAM) $(PROGRAM).lst $(PROGRAM).map
