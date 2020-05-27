@@ -170,6 +170,7 @@ op_38 = op_00
 
 ;// 8 bit transfer instructions
 ;case 0x7F: c->a = c->a; break; // MOV A,A
+op_7f = cp_00
 
 ;case 0x78: c->a = c->b; break; // MOV A,B
 .proc op_78
@@ -254,6 +255,7 @@ op_38 = op_00
 .endproc
 
 ;case 0x40: c->b = c->b; break; // MOV B,B
+op_40 = cp_00
 
 ;case 0x41: c->b = c->c; break; // MOV B,C
 .proc op_41
@@ -309,6 +311,7 @@ op_38 = op_00
 .endproc
 
 ;case 0x49: c->c = c->c; break; // MOV C,C
+op_49 = cp_00
 
 ;case 0x4A: c->c = c->d; break; // MOV C,D
 .proc op_4a
@@ -366,6 +369,7 @@ op_38 = op_00
 .endproc
 
 ;case 0x52: c->d = c->d; break; // MOV D,D
+op_52 = cp_00
 
 ;case 0x53: c->d = c->e; break; // MOV D,E
 .proc op_53
@@ -417,7 +421,10 @@ op_38 = op_00
     sta e
     jmp next
 .endproc
+
 ;case 0x5B: c->e = c->e; break; // MOV E,E
+op_5b = cp_00
+
 ;case 0x5C: c->e = c->h; break; // MOV E,H
 .proc op_5c
     lda h
@@ -468,7 +475,10 @@ op_38 = op_00
     sta h
     jmp next
 .endproc
+
 ;case 0x64: c->h = c->h; break; // MOV H,H
+op_64 = cp_00
+
 ;case 0x65: c->h = c->l; break; // MOV H,L
 .proc op_65
     lda l
@@ -519,7 +529,10 @@ op_38 = op_00
     sta l
     jmp next
 .endproc
+
 ;case 0x6D: c->l = c->l; break; // MOV L,L
+op_6d = cp_00
+
 ;case 0x6E: c->l = i8080_rb(c, i8080_get_hl(c)); break; // MOV L,M
 .proc op_6e
     ldy #hl
