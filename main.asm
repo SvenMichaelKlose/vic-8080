@@ -1925,6 +1925,8 @@ n:  inc sp+1
     jmp next_rebanked
 .endproc
 
+op_d9 = op_c9
+
 ;// returns from subroutine if a condition is met
 ;static inline void i8080_cond_ret(i8080* const c, bool condition) {
 ;    if (condition) {
