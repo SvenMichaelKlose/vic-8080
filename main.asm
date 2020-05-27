@@ -170,7 +170,7 @@ op_38 = op_00
 
 ;// 8 bit transfer instructions
 ;case 0x7F: c->a = c->a; break; // MOV A,A
-op_7f = cp_00
+op_7f = op_00
 
 ;case 0x78: c->a = c->b; break; // MOV A,B
 .proc op_78
@@ -255,7 +255,7 @@ op_7f = cp_00
 .endproc
 
 ;case 0x40: c->b = c->b; break; // MOV B,B
-op_40 = cp_00
+op_40 = op_00
 
 ;case 0x41: c->b = c->c; break; // MOV B,C
 .proc op_41
@@ -311,7 +311,7 @@ op_40 = cp_00
 .endproc
 
 ;case 0x49: c->c = c->c; break; // MOV C,C
-op_49 = cp_00
+op_49 = op_00
 
 ;case 0x4A: c->c = c->d; break; // MOV C,D
 .proc op_4a
@@ -369,7 +369,7 @@ op_49 = cp_00
 .endproc
 
 ;case 0x52: c->d = c->d; break; // MOV D,D
-op_52 = cp_00
+op_52 = op_00
 
 ;case 0x53: c->d = c->e; break; // MOV D,E
 .proc op_53
@@ -423,7 +423,7 @@ op_52 = cp_00
 .endproc
 
 ;case 0x5B: c->e = c->e; break; // MOV E,E
-op_5b = cp_00
+op_5b = op_00
 
 ;case 0x5C: c->e = c->h; break; // MOV E,H
 .proc op_5c
@@ -477,7 +477,7 @@ op_5b = cp_00
 .endproc
 
 ;case 0x64: c->h = c->h; break; // MOV H,H
-op_64 = cp_00
+op_64 = op_00
 
 ;case 0x65: c->h = c->l; break; // MOV H,L
 .proc op_65
@@ -531,7 +531,7 @@ op_64 = cp_00
 .endproc
 
 ;case 0x6D: c->l = c->l; break; // MOV L,L
-op_6d = cp_00
+op_6d = op_00
 
 ;case 0x6E: c->l = i8080_rb(c, i8080_get_hl(c)); break; // MOV L,M
 .proc op_6e
@@ -776,11 +776,6 @@ op_6d = cp_00
     jmp adr8080
 .endproc
 
-.proc adc8080
-    lsr flags       ; Get and clear carry flag.
-    jmp adr8080
-.endproc
-
 
 ;// add byte instructions
 ;case 0x87: i8080_add(c, &c->a, c->a, 0); break; // ADD A
@@ -832,6 +827,11 @@ op_6d = cp_00
     jsr fetch_byte
     ldx #v
     jmp add8080
+.endproc
+
+.proc adc8080
+    lsr flags       ; Get and clear carry flag.
+    jmp adr8080
 .endproc
 
 ;// add byte with carry-in instructions
@@ -886,16 +886,27 @@ op_6d = cp_00
     jmp adc8080
 .endproc
 
+.proc sbr8080
+    lda accu
+    sbc 0,x
+    sta accu
+
+    rol flags   ; Set carry
+
+    eor 0,x
+    eor v
+    and #$04
+    asl
+    asl
+    ora flags
+    sta flags
+    jmp next
+.endproc
 
 .proc sub8080
     lsr flags       ; Clear carry flag.
-    clc
-    jmp adr8080
-.endproc
-
-.proc sbb8080
-    lsr flags       ; Get and clear carry flag.
-    jmp adr8080
+    sec
+    jmp sbr8080
 .endproc
 
 ;// substract byte instructions
@@ -947,6 +958,11 @@ op_6d = cp_00
     jsr fetch_byte
     ldx #v
     jmp sub8080
+.endproc
+
+.proc sbb8080
+    lsr flags       ; Get and clear carry flag.
+    jmp sbr8080
 .endproc
 
 ;// substract byte with borrow-in instructions
