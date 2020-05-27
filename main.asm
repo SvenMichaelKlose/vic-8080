@@ -736,7 +736,7 @@ op_6d = op_00
     jsr read_byte
     ldx #sp
     ldy #hl
-    jsr write_byte
+    jsr write_word_call
     lda v
     sta l
     lda v+1
@@ -1027,10 +1027,10 @@ op_6d = op_00
     lsr flags
     clc
     lda l
-    adc 0,y
+    adc 0,x
     sta l
     lda h
-    adc 1,y
+    adc 1,x
     sta h
     rol flags
     jmp next
@@ -1039,22 +1039,22 @@ op_6d = op_00
 ;// double byte add instructions
 ;case 0x09: i8080_dad(c, i8080_get_bc(c)); break; // DAD B
 .proc op_09
-    ldy #bc
+    ldx #bc
     jmp dad
 .endproc
 ;case 0x19: i8080_dad(c, i8080_get_de(c)); break; // DAD D
 .proc op_19
-    ldy #de
+    ldx #de
     jmp dad
 .endproc
 ;case 0x29: i8080_dad(c, i8080_get_hl(c)); break; // DAD H
 .proc op_29
-    ldy #hl
+    ldx #hl
     jmp dad
 .endproc
 ;case 0x39: i8080_dad(c, c->sp); break; // DAD SP
 .proc op_39
-    ldy #sp
+    ldx #sp
     jmp dad
 .endproc
 
@@ -1092,38 +1092,38 @@ op_6d = op_00
 ;// increment byte instructions
 ;case 0x3C: c->a = i8080_inr(c, c->a); break; // INR A
 .proc op_3c
-    ldy #accu
+    ldx #accu
     jmp inr
 .endproc
 
 ;case 0x04: c->b = i8080_inr(c, c->b); break; // INR B
 .proc op_04
-    ldy #b
+    ldx #b
     jmp inr
 .endproc
 ;case 0x0C: c->c = i8080_inr(c, c->c); break; // INR C
 .proc op_0c
-    ldy #c
+    ldx #c
     jmp inr
 .endproc
 ;case 0x14: c->d = i8080_inr(c, c->d); break; // INR D
 .proc op_14
-    ldy #d
+    ldx #d
     jmp inr
 .endproc
 ;case 0x1C: c->e = i8080_inr(c, c->e); break; // INR E
 .proc op_1c
-    ldy #e
+    ldx #e
     jmp inr
 .endproc
 ;case 0x24: c->h = i8080_inr(c, c->h); break; // INR H
 .proc op_24
-    ldy #h
+    ldx #h
     jmp inr
 .endproc
 ;case 0x2C: c->l = i8080_inr(c, c->l); break; // INR L
 .proc op_2c
-    ldy #l
+    ldx #l
     jmp inr
 .endproc
 
@@ -1162,37 +1162,37 @@ op_6d = op_00
 ;// decrement byte instructions
 ;case 0x3D: c->a = i8080_dcr(c, c->a); break; // DCR A
 .proc op_3d
-    ldy #accu
+    ldx #accu
     jmp dcr
 .endproc
 ;case 0x05: c->b = i8080_dcr(c, c->b); break; // DCR B
 .proc op_05
-    ldy #b
+    ldx #b
     jmp dcr
 .endproc
 ;case 0x0D: c->c = i8080_dcr(c, c->c); break; // DCR C
 .proc op_0d
-    ldy #c
+    ldx #c
     jmp dcr
 .endproc
 ;case 0x15: c->d = i8080_dcr(c, c->d); break; // DCR D
 .proc op_15
-    ldy #d
+    ldx #d
     jmp dcr
 .endproc
 ;case 0x1D: c->e = i8080_dcr(c, c->e); break; // DCR E
 .proc op_1d
-    ldy #e
+    ldx #e
     jmp dcr
 .endproc
 ;case 0x25: c->h = i8080_dcr(c, c->h); break; // DCR H
 .proc op_25
-    ldy #h
+    ldx #h
     jmp dcr
 .endproc
 ;case 0x2D: c->l = i8080_dcr(c, c->l); break; // DCR L
 .proc op_2d
-    ldy #l
+    ldx #l
     jmp dcr
 .endproc
 ;case 0x35: i8080_wb(c, i8080_get_hl(c), i8080_dcr(c, i8080_rb(c, i8080_get_hl(c)))); break; // DCR M
@@ -1810,6 +1810,7 @@ n:  jmp next_rebanked
 .endproc
 
 ;case 0xE9: c->pc = i8080_get_hl(c); break; // PCHL
+
 ;case 0xCD: i8080_call(c, i8080_next_word(c)); break; // CALL
 ;// undocumented CALLs
 ;case 0xDD: case 0xED: case 0xFD: i8080_call(c, i8080_next_word(c));
@@ -1853,7 +1854,6 @@ n2: dec sp+1
     beq op_dd
     jsr fetch_word
 .endproc
-
 
 ;case 0xC4: i8080_cond_call(c, c->zf == 0); break; // CNZ
 .proc op_c4
@@ -1936,42 +1936,42 @@ n:  inc sp+1
 ;case 0xC0: i8080_cond_ret(c, c->zf == 0); break; // RNZ
 .proc op_c0
     lda #FLAG_Z
-    jmp cond_call_inv
+    jmp cond_ret_inv
 .endproc
 ;case 0xC8: i8080_cond_ret(c, c->zf == 1); break; // RZ
 .proc op_c8
     lda #FLAG_Z
-    jmp cond_call
+    jmp cond_ret
 .endproc
 ;case 0xD0: i8080_cond_ret(c, c->cf == 0); break; // RNC
 .proc op_d0
     lda #FLAG_C
-    jmp cond_call_inv
+    jmp cond_ret_inv
 .endproc
 ;case 0xD8: i8080_cond_ret(c, c->cf == 1); break; // RC
 .proc op_d8
     lda #FLAG_C
-    jmp cond_call
+    jmp cond_ret
 .endproc
 ;case 0xE0: i8080_cond_ret(c, c->pf == 0); break; // RPO
 .proc op_e0
     lda #FLAG_P
-    jmp cond_call_inv
+    jmp cond_ret_inv
 .endproc
 ;case 0xE8: i8080_cond_ret(c, c->pf == 1); break; // RPE
 .proc op_e8
     lda #FLAG_P
-    jmp cond_call
+    jmp cond_ret
 .endproc
 ;case 0xF0: i8080_cond_ret(c, c->sf == 0); break; // RP
 .proc op_f0
     lda #FLAG_S
-    jmp cond_call_inv
+    jmp cond_ret_inv
 .endproc
 ;case 0xF8: i8080_cond_ret(c, c->sf == 1); break; // RM
 .proc op_f8
     lda #FLAG_S
-    jmp cond_call
+    jmp cond_ret
 .endproc
 
 .proc rst
