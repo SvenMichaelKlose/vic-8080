@@ -151,6 +151,17 @@ n:  sta flags
 ;case 0x20: case 0x28:
 ;case 0x30: case 0x38:
 ;break;
+.proc op_00
+    rts
+.endproc
+
+op_08 = op_00
+op_10 = op_00
+op_18 = op_00
+op_20 = op_00
+op_28 = op_00
+op_30 = op_00
+op_38 = op_00
 
 ;case 0x76: c->halted = 1; break; // HLT
 
