@@ -164,6 +164,9 @@ op_30 = op_00
 op_38 = op_00
 
 ;case 0x76: c->halted = 1; break; // HLT
+.proc op_76
+    jmp op_76
+.endproc
 
 ;// 8 bit transfer instructions
 ;case 0x7F: c->a = c->a; break; // MOV A,A
