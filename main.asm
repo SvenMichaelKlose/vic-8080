@@ -1826,7 +1826,7 @@ n:  jmp next_rebanked
 ;    i8080_push_stack(c, c->pc);
 ;    i8080_jmp(c, addr);
 ;}
-.proc op_dd
+.proc op_cd
     dec sp
     ldx sp  ; -1?
     inx
@@ -1840,6 +1840,10 @@ n:  ldx #sp
 n2: dec sp+1
     jmp n
 .endproc
+
+op_dd = op_cd
+op_ed = op_cd
+op_fd = op_cd
 
 
 ;// calls to next word in memory if a condition is met
