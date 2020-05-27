@@ -33,6 +33,8 @@ h:          .res 1
 l:          .res 1
 sp:         .res 2
 flag_i:     .res 1
+
+ptr:        .res 2  ; Shadow PC pointing to BLK3.
 register_end:
 
 v:          .res 2
@@ -40,6 +42,7 @@ daa_correction:
 tmp:        .res 1
 daa_lsb:    .res 1
 daa_msb:    .res 1
+tmpptr:     .res 2
 
 
 .bss
@@ -69,6 +72,12 @@ opcodes_h:
 .endproc
 
 .proc next
+    jsr fetch_byte
+    tax
+    lda opcodes_l,x
+    pha
+    lda opcodes_h,x
+    pha
     rts
 .endproc
 
@@ -76,23 +85,73 @@ opcodes_h:
     rts
 .endproc
 
+; #####################
+; ### MEMORY ACCESS ###
+; #####################
+
 .proc fetch_byte
+    ldy #0
+    lda (ptr),y
+
+    inc ptr
+    inc pc
+    beq n1
+    rts
+
+n1: inc ptr+1
+    inc pc+1
+    bmi rebank_pc
+    rts
+.endproc
+
+.proc rebank_pc
+    pha
+    lda pc
+    lsr
+    lsr
+    lsr
+    sta $9ffc
+    lda pc
+    and #%00000111
+    ora #$60
+    sta ptr
+    lda pc+1
+    sta ptr+1
+    pla
     rts
 .endproc
 
 .proc fetch_word
+    jsr fetch_byte
+    sta v
+    jsr fetch_byte
+    sta v+1
     rts
 .endproc
 
-.proc fetch_word_y
+.proc fetch_word_x
+    jsr fetch_byte
+    sta 0,x
+    jsr fetch_byte
+    sta 1,x
     rts
 .endproc
 
 .proc read_byte
-    rts
-.endproc
+    lda 1,x
+    lsr
+    lsr
+    lsr
+    sta $9ffc
+    lda 1,x
+    and #%00000111
+    ora #$60
+    sta tmpptr+1
+    lda 0,x
+    sta tmpptr
 
-.proc read_byte_y
+    ldy #0
+    lda (tmpptr),y
     rts
 .endproc
 
@@ -111,6 +170,10 @@ opcodes_h:
 .proc write_word_call
     rts
 .endproc
+
+; #############
+; ### FLAGS ###
+; #############
 
 .proc get_flags
     lda flags
@@ -173,7 +236,14 @@ op_38 = op_00
     jmp op_76
 .endproc
 
-;// 8 bit transfer instructions
+; #################################
+; ## 8 bit transfer instructions ##
+; #################################
+
+; #########
+; ## MOV ##
+; #########
+
 ;case 0x7F: c->a = c->a; break; // MOV A,A
 op_7f = op_00
 
@@ -221,32 +291,7 @@ op_7f = op_00
 
 ;case 0x7E: c->a = i8080_rb(c, i8080_get_hl(c)); break; // MOV A,M
 .proc op_7e
-    ldy #hl
-    jsr read_byte
-    sta accu
-    jmp next
-.endproc
-
-;case 0x0A: c->a = i8080_rb(c, i8080_get_bc(c)); break; // LDAX B
-.proc op_0a
-    ldy #bc
-    jsr read_byte
-    sta accu
-    jmp next
-.endproc
-
-;case 0x1A: c->a = i8080_rb(c, i8080_get_de(c)); break; // LDAX D
-.proc op_1a
-    ldy #de
-    jsr read_byte
-    sta accu
-    jmp next
-.endproc
-
-;case 0x3A: c->a = i8080_rb(c, i8080_next_word(c)); break; // LDA word
-.proc op_3a
-    jsr fetch_word
-    ldy #v
+    ldx #hl
     jsr read_byte
     sta accu
     jmp next
@@ -294,7 +339,7 @@ op_40 = op_00
 .endproc
 ;case 0x46: c->b = i8080_rb(c, i8080_get_hl(c)); break; // MOV B,M
 .proc op_46
-    ldy #hl
+    ldx #hl
     jsr read_byte
     sta b
     jmp next
@@ -348,7 +393,7 @@ op_49 = op_00
 
 ;case 0x4E: c->c = i8080_rb(c, i8080_get_hl(c)); break; // MOV C,M
 .proc op_4e
-    ldy #hl
+    ldx #hl
     jsr read_byte
     sta c
     jmp next
@@ -360,12 +405,14 @@ op_49 = op_00
     sta d
     jmp next
 .endproc
+
 ;case 0x50: c->d = c->b; break; // MOV D,B
 .proc op_50
     lda b
     sta d
     jmp next
 .endproc
+
 ;case 0x51: c->d = c->c; break; // MOV D,C
 .proc op_51
     lda c
@@ -382,21 +429,24 @@ op_52 = op_00
     sta d
     jmp next
 .endproc
+
 ;case 0x54: c->d = c->h; break; // MOV D,H
 .proc op_54
     lda h
     sta d
     jmp next
 .endproc
+
 ;case 0x55: c->d = c->l; break; // MOV D,L
 .proc op_55
     lda l
     sta d
     jmp next
 .endproc
+
 ;case 0x56: c->d = i8080_rb(c, i8080_get_hl(c)); break; // MOV D,M
 .proc op_56
-    ldy #hl
+    ldx #hl
     jsr read_byte
     sta d
     jmp next
@@ -408,18 +458,21 @@ op_52 = op_00
     sta e
     jmp next
 .endproc
+
 ;case 0x58: c->e = c->b; break; // MOV E,B
 .proc op_58
     lda b
     sta e
     jmp next
 .endproc
+
 ;case 0x59: c->e = c->c; break; // MOV E,C
 .proc op_59
     lda c
     sta e
     jmp next
 .endproc
+
 ;case 0x5A: c->e = c->d; break; // MOV E,D
 .proc op_5a
     lda d
@@ -436,15 +489,17 @@ op_5b = op_00
     sta e
     jmp next
 .endproc
+
 ;case 0x5D: c->e = c->l; break; // MOV E,L
 .proc op_5d
     lda l
     sta e
     jmp next
 .endproc
+
 ;case 0x5E: c->e = i8080_rb(c, i8080_get_hl(c)); break; // MOV E,M
 .proc op_5e
-    ldy #hl
+    ldx #hl
     jsr read_byte
     sta e
     jmp next
@@ -456,24 +511,28 @@ op_5b = op_00
     sta h
     jmp next
 .endproc
+
 ;case 0x60: c->h = c->b; break; // MOV H,B
 .proc op_60
     lda b
     sta h
     jmp next
 .endproc
+
 ;case 0x61: c->h = c->c; break; // MOV H,C
 .proc op_61
     lda c
     sta h
     jmp next
 .endproc
+
 ;case 0x62: c->h = c->d; break; // MOV H,D
 .proc op_62
     lda d
     sta h
     jmp next
 .endproc
+
 ;case 0x63: c->h = c->e; break; // MOV H,E
 .proc op_63
     lda e
@@ -490,9 +549,10 @@ op_64 = op_00
     sta h
     jmp next
 .endproc
+
 ;case 0x66: c->h = i8080_rb(c, i8080_get_hl(c)); break; // MOV H,M
 .proc op_66
-    ldy #hl
+    ldx #hl
     jsr read_byte
     sta h
     jmp next
@@ -504,30 +564,35 @@ op_64 = op_00
     sta l
     jmp next
 .endproc
+
 ;case 0x68: c->l = c->b; break; // MOV L,B
 .proc op_68
     lda b
     sta l
     jmp next
 .endproc
+
 ;case 0x69: c->l = c->c; break; // MOV L,C
 .proc op_69
     lda c
     sta l
     jmp next
 .endproc
+
 ;case 0x6A: c->l = c->d; break; // MOV L,D
 .proc op_6a
     lda d
     sta l
     jmp next
 .endproc
+
 ;case 0x6B: c->l = c->e; break; // MOV L,E
 .proc op_6b
     lda e
     sta l
     jmp next
 .endproc
+
 ;case 0x6C: c->l = c->h; break; // MOV L,H
 .proc op_6c
     lda h
@@ -540,7 +605,7 @@ op_6d = op_00
 
 ;case 0x6E: c->l = i8080_rb(c, i8080_get_hl(c)); break; // MOV L,M
 .proc op_6e
-    ldy #hl
+    ldx #hl
     jsr read_byte
     sta l
     jmp next
@@ -552,36 +617,42 @@ op_6d = op_00
     ldy #hl
     jmp write_byte
 .endproc
+
 ;case 0x70: i8080_wb(c, i8080_get_hl(c), c->b); break; // MOV M,B
 .proc op_70
     lda b
     ldy #hl
     jmp write_byte
 .endproc
+
 ;case 0x71: i8080_wb(c, i8080_get_hl(c), c->c); break; // MOV M,C
 .proc op_71
     lda c
     ldy #hl
     jmp write_byte
 .endproc
+
 ;case 0x72: i8080_wb(c, i8080_get_hl(c), c->d); break; // MOV M,D
 .proc op_72
     lda d
     ldy #hl
     jmp write_byte
 .endproc
+
 ;case 0x73: i8080_wb(c, i8080_get_hl(c), c->e); break; // MOV M,E
 .proc op_73
     lda e
     ldy #hl
     jmp write_byte
 .endproc
+
 ;case 0x74: i8080_wb(c, i8080_get_hl(c), c->h); break; // MOV M,H
 .proc op_74
     lda h
     ldy #hl
     jmp write_byte
 .endproc
+
 ;case 0x75: i8080_wb(c, i8080_get_hl(c), c->l); break; // MOV M,L
 .proc op_75
     lda l
@@ -589,46 +660,56 @@ op_6d = op_00
     jmp write_byte
 .endproc
 
+; ###########
+; ### MVI ###
+; ###########
+
 ;case 0x3E: c->a = i8080_next_byte(c); break; // MVI A,byte
 .proc op_3e
     jsr fetch_byte
     sta accu
     jmp next
 .endproc
+
 ;case 0x06: c->b = i8080_next_byte(c); break; // MVI B,byte
 .proc op_06
     jsr fetch_byte
-    sta accu
+    sta b
     jmp next
 .endproc
+
 ;case 0x0E: c->c = i8080_next_byte(c); break; // MVI C,byte
 .proc op_0e
     jsr fetch_byte
-    sta accu
+    sta c
     jmp next
 .endproc
+
 ;case 0x16: c->d = i8080_next_byte(c); break; // MVI D,byte
 .proc op_16
     jsr fetch_byte
-    sta accu
+    sta d
     jmp next
 .endproc
+
 ;case 0x1E: c->e = i8080_next_byte(c); break; // MVI E,byte
 .proc op_1e
     jsr fetch_byte
-    sta accu
+    sta e
     jmp next
 .endproc
+
 ;case 0x26: c->h = i8080_next_byte(c); break; // MVI H,byte
 .proc op_26
     jsr fetch_byte
-    sta accu
+    sta h
     jmp next
 .endproc
+
 ;case 0x2E: c->l = i8080_next_byte(c); break; // MVI L,byte
 .proc op_2e
     jsr fetch_byte
-    sta accu
+    sta l
     jmp next
 .endproc
 
@@ -638,6 +719,45 @@ op_6d = op_00
     ldy #hl
     jmp write_byte
 .endproc
+
+; ##########
+; ## LDAX ##
+; ##########
+
+;case 0x0A: c->a = i8080_rb(c, i8080_get_bc(c)); break; // LDAX B
+.proc op_0a
+    ldx #bc
+    jsr read_byte
+    sta accu
+    jmp next
+.endproc
+
+;case 0x1A: c->a = i8080_rb(c, i8080_get_de(c)); break; // LDAX D
+.proc op_1a
+    ldx #de
+    jsr read_byte
+    sta accu
+    jmp next
+.endproc
+
+
+; #########
+; ## LDA ##
+; #########
+
+;case 0x3A: c->a = i8080_rb(c, i8080_next_word(c)); break; // LDA word
+.proc op_3a
+    jsr fetch_word
+    ldx #v
+    jsr read_byte
+    sta accu
+    jmp next
+.endproc
+
+
+; ##########
+; ## STAX ##
+; ##########
 
 ;case 0x02: i8080_wb(c, i8080_get_bc(c), c->a); break; // STAX B
 .proc op_02
@@ -653,6 +773,11 @@ op_6d = op_00
     jmp write_byte
 .endproc
 
+
+; #########
+; ## STA ##
+; #########
+
 ;case 0x32: i8080_wb(c, i8080_next_word(c), c->a); break; // STA word
 .proc op_32
     jsr fetch_word
@@ -661,28 +786,40 @@ op_6d = op_00
     jmp write_byte
 .endproc
 
+; #########
+; ## LXI ##
+; #########
+
 ;// 16 bit transfer instructions
 ;case 0x01: i8080_set_bc(c, i8080_next_word(c)); break; // LXI B,word
 .proc op_01
-    ldy #bc
-    jmp fetch_word_y
+    ldx #bc
+    jmp fetch_word_x
 .endproc
 
 ;case 0x11: i8080_set_de(c, i8080_next_word(c)); break; // LXI D,word
 .proc op_11
-    ldy #de
-    jmp fetch_word_y
+    ldx #de
+    jmp fetch_word_x
 .endproc
+
 ;case 0x21: i8080_set_hl(c, i8080_next_word(c)); break; // LXI H,word
 .proc op_21
-    ldy #hl
-    jmp fetch_word_y
+    ldx #hl
+    jmp fetch_word_x
 .endproc
+
 ;case 0x31: c->sp = i8080_next_word(c); break; // LXI SP,word
 .proc op_31
-    ldy #sp
-    jmp fetch_word_y
+    ldx #sp
+    jmp fetch_word_x
 .endproc
+
+
+; ###############
+; ## LDHD/SHLD ##
+; ###############
+
 ;case 0x2A: i8080_set_hl(c, i8080_rw(c, i8080_next_word(c))); break; // LHLD
 .proc op_2a
     jsr fetch_word
@@ -699,6 +836,11 @@ op_6d = op_00
     jmp next
 .endproc
 
+
+; ##########
+; ## SPHL ##
+; ##########
+
 ;case 0xF9: c->sp = i8080_get_hl(c); break; // SPHL
 .proc op_f9
     lda l
@@ -707,6 +849,11 @@ op_6d = op_00
     sta sp+1
     jmp next
 .endproc
+
+
+; ##########
+; ## XCHG ##
+; ##########
 
 ;// register exchange instructions
 ;case 0xEB: i8080_xchg(c); break; // XCHG
@@ -728,6 +875,11 @@ op_6d = op_00
     jmp next
 .endproc
 
+
+; ##########
+; ## XTHL ##
+; ##########
+
 ;case 0xE3: i8080_xthl(c); break; // XTHL
 ;// switches the value of a word at (sp) and HL
 ;static inline void i8080_xthl(i8080* const c) {
@@ -738,7 +890,7 @@ op_6d = op_00
 .proc op_e3
     ldx #sp
     ldy #v
-    jsr read_byte
+    jsr read_word
     ldx #sp
     ldy #hl
     jsr write_word_call
@@ -794,39 +946,46 @@ op_6d = op_00
     ldx #b
     bne add8080
 .endproc
+    
 ;case 0x81: i8080_add(c, &c->a, c->c, 0); break; // ADD C
 .proc op_81
     ldx #c
     bne add8080
 .endproc
+    
 ;case 0x82: i8080_add(c, &c->a, c->d, 0); break; // ADD D
 .proc op_82
     ldx #d
     bne add8080
 .endproc
+    
 ;case 0x83: i8080_add(c, &c->a, c->e, 0); break; // ADD E
 .proc op_83
     ldx #e
     bne add8080
 .endproc
+    
 ;case 0x84: i8080_add(c, &c->a, c->h, 0); break; // ADD H
 .proc op_84
     ldx #h
     bne add8080
 .endproc
+    
 ;case 0x85: i8080_add(c, &c->a, c->l, 0); break; // ADD L
 .proc op_85
     ldx #l
     bne add8080
 .endproc
+    
 ;case 0x86: i8080_add(c, &c->a, i8080_rb(c, i8080_get_hl(c)), 0); break; // ADD M
 .proc op_86
-    ldy #hl
-    jsr read_byte_y
+    ldx #hl
+    jsr read_byte
     sta v
     ldx #v
     bne add8080
 .endproc
+    
 ;case 0xC6: i8080_add(c, &c->a, i8080_next_byte(c), 0); break; // ADI byte
 .proc op_c6
     jsr fetch_byte
@@ -845,31 +1004,37 @@ op_6d = op_00
     ldx #accu
     bne adc8080
 .endproc
+    
 ;case 0x88: i8080_add(c, &c->a, c->b, c->cf); break; // ADC B
 .proc op_88
     ldx #b
     bne adc8080
 .endproc
+    
 ;case 0x89: i8080_add(c, &c->a, c->c, c->cf); break; // ADC C
 .proc op_89
     ldx #c
     bne adc8080
 .endproc
+    
 ;case 0x8A: i8080_add(c, &c->a, c->d, c->cf); break; // ADC D
 .proc op_8a
     ldx #d
     bne adc8080
 .endproc
+    
 ;case 0x8B: i8080_add(c, &c->a, c->e, c->cf); break; // ADC E
 .proc op_8b
     ldx #e
     bne adc8080
 .endproc
+    
 ;case 0x8C: i8080_add(c, &c->a, c->h, c->cf); break; // ADC H
 .proc op_8c
     ldx #h
     bne adc8080
 .endproc
+    
 ;case 0x8D: i8080_add(c, &c->a, c->l, c->cf); break; // ADC L
 .proc op_8d
     ldx #l
@@ -878,12 +1043,13 @@ op_6d = op_00
 
 ;case 0x8E: i8080_add(c, &c->a, i8080_rb(c, i8080_get_hl(c)), c->cf); break; // ADC M
 .proc op_8e
-    ldy #hl
-    jsr read_byte_y
+    ldx #hl
+    jsr read_byte
     sta v
     ldx #v
     bne adc8080
 .endproc
+    
 ;case 0xCE: i8080_add(c, &c->a, i8080_next_byte(c), c->cf); break; // ACI byte
 .proc op_ce
     jsr fetch_byte
@@ -920,44 +1086,52 @@ op_6d = op_00
     ldx #accu
     bne sub8080
 .endproc
+    
 ;case 0x90: i8080_sub(c, &c->a, c->b, 0); break; // SUB B
 .proc op_90
     ldx #b
     bne sub8080
 .endproc
+    
 ;case 0x91: i8080_sub(c, &c->a, c->c, 0); break; // SUB C
 .proc op_91
     ldx #c
     bne sub8080
 .endproc
+    
 ;case 0x92: i8080_sub(c, &c->a, c->d, 0); break; // SUB D
 .proc op_92
     ldx #d
     bne sub8080
 .endproc
+    
 ;case 0x93: i8080_sub(c, &c->a, c->e, 0); break; // SUB E
 .proc op_93
     ldx #e
     bne sub8080
 .endproc
+    
 ;case 0x94: i8080_sub(c, &c->a, c->h, 0); break; // SUB H
 .proc op_94
     ldx #h
     bne sub8080
 .endproc
+    
 ;case 0x95: i8080_sub(c, &c->a, c->l, 0); break; // SUB L
 .proc op_95
     ldx #l
     bne sub8080
 .endproc
+    
 ;case 0x96: i8080_sub(c, &c->a, i8080_rb(c, i8080_get_hl(c)), 0); break; // SUB M
 .proc op_96
     ldx #hl
-    jsr read_byte_y
+    jsr read_byte
     sta v
     ldx #v
     bne sub8080
 .endproc
+    
 ;case 0xD6: i8080_sub(c, &c->a, i8080_next_byte(c), 0); break; // SUI byte
 .proc op_d6
     jsr fetch_byte
@@ -976,40 +1150,47 @@ op_6d = op_00
     ldx #accu
     bne sbb8080
 .endproc
+    
 ;case 0x98: i8080_sub(c, &c->a, c->b, c->cf); break; // SBB B
 .proc op_98
     ldx #b
     bne sbb8080
 .endproc
+    
 ;case 0x99: i8080_sub(c, &c->a, c->c, c->cf); break; // SBB C
 .proc op_99
     ldx #c
     bne sbb8080
 .endproc
+    
 ;case 0x9A: i8080_sub(c, &c->a, c->d, c->cf); break; // SBB D
 .proc op_9a
     ldx #d
     bne sbb8080
 .endproc
+    
 ;case 0x9B: i8080_sub(c, &c->a, c->e, c->cf); break; // SBB E
 .proc op_9b
     ldx #e
     bne sbb8080
 .endproc
+    
 ;case 0x9C: i8080_sub(c, &c->a, c->h, c->cf); break; // SBB H
 .proc op_9c
     ldx #h
     bne sbb8080
 .endproc
+    
 ;case 0x9D: i8080_sub(c, &c->a, c->l, c->cf); break; // SBB L
 .proc op_9d
     ldx #l
     bne sbb8080
 .endproc
+    
 ;case 0x9E: i8080_sub(c, &c->a, i8080_rb(c, i8080_get_hl(c)), c->cf); break; // SBB M
 .proc op_9e
-    ldy #hl
-    jsr read_byte_y
+    ldx #hl
+    jsr read_byte
     sta v
     ldx #v
     bne sbb8080
@@ -1047,23 +1228,30 @@ op_6d = op_00
     ldx #bc
     bne dad
 .endproc
+    
 ;case 0x19: i8080_dad(c, i8080_get_de(c)); break; // DAD D
 .proc op_19
     ldx #de
     bne dad
 .endproc
+    
 ;case 0x29: i8080_dad(c, i8080_get_hl(c)); break; // DAD H
 .proc op_29
     ldx #hl
     bne dad
 .endproc
+    
 ;case 0x39: i8080_dad(c, c->sp); break; // DAD SP
 .proc op_39
     ldx #sp
     bne dad
 .endproc
 
-;// control instructions
+
+; ################
+; ## INTERRUPTS ##
+; ################
+
 ;case 0xF3: c->iff = 0; break; // DI
 .proc op_f3
     lda #1
@@ -1077,6 +1265,10 @@ op_6d = op_00
     sta flag_i
     jmp next
 .endproc
+
+; ###########################
+; ## INCREMENT / DECREMENT ##
+; ###########################
 
 ; // increments a byte
 ; static inline uint8_t i8080_inr(i8080* const c, uint8_t val) {
@@ -1106,26 +1298,31 @@ op_6d = op_00
     ldx #b
     bne inr
 .endproc
+    
 ;case 0x0C: c->c = i8080_inr(c, c->c); break; // INR C
 .proc op_0c
     ldx #c
     bne inr
 .endproc
+    
 ;case 0x14: c->d = i8080_inr(c, c->d); break; // INR D
 .proc op_14
     ldx #d
     bne inr
 .endproc
+    
 ;case 0x1C: c->e = i8080_inr(c, c->e); break; // INR E
 .proc op_1c
     ldx #e
     bne inr
 .endproc
+    
 ;case 0x24: c->h = i8080_inr(c, c->h); break; // INR H
 .proc op_24
     ldx #h
     bne inr
 .endproc
+    
 ;case 0x2C: c->l = i8080_inr(c, c->l); break; // INR L
 .proc op_2c
     ldx #l
@@ -1170,43 +1367,50 @@ op_6d = op_00
     ldx #accu
     bne dcr
 .endproc
+    
 ;case 0x05: c->b = i8080_dcr(c, c->b); break; // DCR B
 .proc op_05
     ldx #b
     bne dcr
 .endproc
+    
 ;case 0x0D: c->c = i8080_dcr(c, c->c); break; // DCR C
 .proc op_0d
     ldx #c
     bne dcr
 .endproc
+    
 ;case 0x15: c->d = i8080_dcr(c, c->d); break; // DCR D
 .proc op_15
     ldx #d
     bne dcr
 .endproc
+    
 ;case 0x1D: c->e = i8080_dcr(c, c->e); break; // DCR E
 .proc op_1d
     ldx #e
     bne dcr
 .endproc
+    
 ;case 0x25: c->h = i8080_dcr(c, c->h); break; // DCR H
 .proc op_25
     ldx #h
     bne dcr
 .endproc
+    
 ;case 0x2D: c->l = i8080_dcr(c, c->l); break; // DCR L
 .proc op_2d
     ldx #l
     bne dcr
 .endproc
+    
 ;case 0x35: i8080_wb(c, i8080_get_hl(c), i8080_dcr(c, i8080_rb(c, i8080_get_hl(c)))); break; // DCR M
 .proc op_35
     ldx #hl
-    ldy #v
     jsr read_byte
     sta v
     dec v
+    ldy #v
     jsr write_byte
     lda v
     and #$0f
@@ -1224,6 +1428,7 @@ op_6d = op_00
 n:  inc b
     jmp next
 .endproc
+    
 ;case 0x13: i8080_set_de(c, i8080_get_de(c) + 1); break; // INX D
 .proc op_13
     inc e
@@ -1232,6 +1437,7 @@ n:  inc b
 n:  inc d
     jmp next
 .endproc
+    
 ;case 0x23: i8080_set_hl(c, i8080_get_hl(c) + 1); break; // INX H
 .proc op_23
     inc l
@@ -1240,6 +1446,7 @@ n:  inc d
 n:  inc h
     jmp next
 .endproc
+    
 ;case 0x33: c->sp += 1; break; // INX SP
 .proc op_33
     inc sp
@@ -1261,6 +1468,7 @@ n:  inc sp+1
     sta b
     jmp next
 .endproc
+    
 ;case 0x1B: i8080_set_de(c, i8080_get_de(c) - 1); break; // DCX D
 .proc op_1b
     sec
@@ -1272,6 +1480,7 @@ n:  inc sp+1
     sta d
     jmp next
 .endproc
+    
 ;case 0x2B: i8080_set_hl(c, i8080_get_hl(c) - 1); break; // DCX H
 .proc op_2b
     sec
@@ -1283,6 +1492,7 @@ n:  inc sp+1
     sta h
     jmp next
 .endproc
+    
 ;case 0x3B: c->sp -= 1; break; // DCX SP
 .proc op_3b
     sec
@@ -1477,44 +1687,52 @@ n4: clc
     ldx #accu
     bne ana
 .endproc
+    
 ;case 0xA0: i8080_ana(c, c->b); break; // ANA B
 .proc op_a0
     ldx #b
     bne ana
 .endproc
+    
 ;case 0xA1: i8080_ana(c, c->c); break; // ANA C
 .proc op_a1
     ldx #c
     bne ana
 .endproc
+    
 ;case 0xA2: i8080_ana(c, c->d); break; // ANA D
 .proc op_a2
     ldx #d
     bne ana
 .endproc
+    
 ;case 0xA3: i8080_ana(c, c->e); break; // ANA E
 .proc op_a3
     ldx #e
     bne ana
 .endproc
+    
 ;case 0xA4: i8080_ana(c, c->h); break; // ANA H
 .proc op_a4
     ldx #h
     bne ana
 .endproc
+    
 ;case 0xA5: i8080_ana(c, c->l); break; // ANA L
 .proc op_a5
     ldx #l
     bne ana
 .endproc
+    
 ;case 0xA6: i8080_ana(c, i8080_rb(c, i8080_get_hl(c))); break; // ANA M
 .proc op_a6
-    ldy #hl
+    ldx #hl
     jsr read_byte
     sta v
     ldx #v
     bne ana
 .endproc
+    
 ;case 0xE6: i8080_ana(c, i8080_next_byte(c)); break; // ANI byte
 .proc op_e6
     jsr fetch_byte
@@ -1542,44 +1760,52 @@ n4: clc
     ldx #accu
     bne xra
 .endproc
+    
 ;case 0xA8: i8080_xra(c, c->b); break; // XRA B
 .proc op_a8
     ldx #b
     bne xra
 .endproc
+    
 ;case 0xA9: i8080_xra(c, c->c); break; // XRA C
 .proc op_a9
     ldx #c
     bne xra
 .endproc
+    
 ;case 0xAA: i8080_xra(c, c->d); break; // XRA D
 .proc op_aa
     ldx #d
     bne xra
 .endproc
+    
 ;case 0xAB: i8080_xra(c, c->e); break; // XRA E
 .proc op_ab
     ldx #e
     bne xra
 .endproc
+    
 ;case 0xAC: i8080_xra(c, c->h); break; // XRA H
 .proc op_ac
     ldx #h
     bne xra
 .endproc
+    
 ;case 0xAD: i8080_xra(c, c->l); break; // XRA L
 .proc op_ad
     ldx #l
     bne xra
 .endproc
+    
 ;case 0xAE: i8080_xra(c, i8080_rb(c, i8080_get_hl(c))); break; // XRA M
 .proc op_ae
-    ldy #hl
+    ldx #hl
     jsr read_byte
     sta v
     ldx #v
     bne xra
 .endproc
+    
 ;case 0xEE: i8080_xra(c, i8080_next_byte(c)); break; // XRI byte
 .proc op_ee
     jsr fetch_byte
@@ -1607,44 +1833,52 @@ n4: clc
     ldx #accu
     bne ora8080
 .endproc
+    
 ;case 0xB0: i8080_ora(c, c->b); break; // ORA B
 .proc op_b0
     ldx #b
     bne ora8080
 .endproc
+    
 ;case 0xB1: i8080_ora(c, c->c); break; // ORA C
 .proc op_b1
     ldx #c
     bne ora8080
 .endproc
+    
 ;case 0xB2: i8080_ora(c, c->d); break; // ORA D
 .proc op_b2
     ldx #d
     bne ora8080
 .endproc
+    
 ;case 0xB3: i8080_ora(c, c->e); break; // ORA E
 .proc op_b3
     ldx #e
     bne ora8080
 .endproc
+    
 ;case 0xB4: i8080_ora(c, c->h); break; // ORA H
 .proc op_b4
     ldx #h
     bne ora8080
 .endproc
+    
 ;case 0xB5: i8080_ora(c, c->l); break; // ORA L
 .proc op_b5
     ldx #l
     bne ora8080
 .endproc
+    
 ;case 0xB6: i8080_ora(c, i8080_rb(c, i8080_get_hl(c))); break; // ORA M
 .proc op_b6
-    ldy #hl
+    ldx #hl
     jsr read_byte
     sta v
     ldx #v
     bne ora8080
 .endproc
+    
 ;case 0xF6: i8080_ora(c, i8080_next_byte(c)); break; // ORI byte
 .proc op_f6
     jsr fetch_byte
@@ -1679,44 +1913,52 @@ n4: clc
     ldx #accu
     bne cmp8080
 .endproc
+    
 ;case 0xB8: i8080_cmp(c, c->b); break; // CMP B
 .proc op_b8
     ldx #b
     bne cmp8080
 .endproc
+    
 ;case 0xB9: i8080_cmp(c, c->c); break; // CMP C
 .proc op_b9
     ldx #c
     bne cmp8080
 .endproc
+    
 ;case 0xBA: i8080_cmp(c, c->d); break; // CMP D
 .proc op_ba
     ldx #d
     bne cmp8080
 .endproc
+    
 ;case 0xBB: i8080_cmp(c, c->e); break; // CMP E
 .proc op_bb
     ldx #e
     bne cmp8080
 .endproc
+    
 ;case 0xBC: i8080_cmp(c, c->h); break; // CMP H
 .proc op_bc
     ldx #h
     bne cmp8080
 .endproc
+    
 ;case 0xBD: i8080_cmp(c, c->l); break; // CMP L
 .proc op_bd
     ldx #l
     bne cmp8080
 .endproc
+    
 ;case 0xBE: i8080_cmp(c, i8080_rb(c, i8080_get_hl(c))); break; // CMP M
 .proc op_be
-    ldy #hl
+    ldx #hl
     jsr read_byte
     sta v
     ldx #v
     bne cmp8080
 .endproc
+    
 ;case 0xFE: i8080_cmp(c, i8080_next_byte(c)); break; // CPI byte
 .proc op_fe
     jsr fetch_byte
@@ -1729,8 +1971,8 @@ n4: clc
 ;// undocumented JMP
 ;case 0xCB: i8080_jmp(c, i8080_next_word(c)); break;
 .proc op_c3
-    ldy #pc
-    jsr fetch_word_y
+    ldx #pc
+    jsr fetch_word_x
     jmp next_rebanked
 .endproc
 
@@ -1841,8 +2083,8 @@ n:  jmp next_rebanked
 n:  ldx #sp
     ldy #pc
     jsr write_word_call
-    ldy #pc
-    jsr fetch_word_y
+    ldx #pc
+    jsr fetch_word_x
     jmp next_rebanked
 n2: dec sp+1
     jmp n
@@ -1878,36 +2120,43 @@ op_fd = op_cd
     lda #FLAG_Z
     bne cond_call_inv
 .endproc
+    
 ;case 0xCC: i8080_cond_call(c, c->zf == 1); break; // CZ
 .proc op_cc
     lda #FLAG_Z
     bne cond_call
 .endproc
+    
 ;case 0xD4: i8080_cond_call(c, c->cf == 0); break; // CNC
 .proc op_d4
     lda #FLAG_C
     bne cond_call_inv
 .endproc
+    
 ;case 0xDC: i8080_cond_call(c, c->cf == 1); break; // CC
 .proc op_dc
     lda #FLAG_C
     bne cond_call
 .endproc
+    
 ;case 0xE4: i8080_cond_call(c, c->pf == 0); break; // CPO
 .proc op_e4
     lda #FLAG_P
     bne cond_call_inv
 .endproc
+    
 ;case 0xEC: i8080_cond_call(c, c->pf == 1); break; // CPE
 .proc op_ec
     lda #FLAG_P
     bne cond_call
 .endproc
+    
 ;case 0xF4: i8080_cond_call(c, c->sf == 0); break; // CP
 .proc op_f4
     lda #FLAG_S
     bne cond_call_inv
 .endproc
+    
 ;case 0xFC: i8080_cond_call(c, c->sf == 1); break; // CM
 .proc op_fc
     lda #FLAG_S
@@ -1958,36 +2207,43 @@ op_d9 = op_c9
     lda #FLAG_Z
     bne cond_ret_inv
 .endproc
+    
 ;case 0xC8: i8080_cond_ret(c, c->zf == 1); break; // RZ
 .proc op_c8
     lda #FLAG_Z
     bne cond_ret
 .endproc
+    
 ;case 0xD0: i8080_cond_ret(c, c->cf == 0); break; // RNC
 .proc op_d0
     lda #FLAG_C
     bne cond_ret_inv
 .endproc
+    
 ;case 0xD8: i8080_cond_ret(c, c->cf == 1); break; // RC
 .proc op_d8
     lda #FLAG_C
     bne cond_ret
 .endproc
+    
 ;case 0xE0: i8080_cond_ret(c, c->pf == 0); break; // RPO
 .proc op_e0
     lda #FLAG_P
     bne cond_ret_inv
 .endproc
+    
 ;case 0xE8: i8080_cond_ret(c, c->pf == 1); break; // RPE
 .proc op_e8
     lda #FLAG_P
     bne cond_ret
 .endproc
+    
 ;case 0xF0: i8080_cond_ret(c, c->sf == 0); break; // RP
 .proc op_f0
     lda #FLAG_S
     bne cond_ret_inv
 .endproc
+    
 ;case 0xF8: i8080_cond_ret(c, c->sf == 1); break; // RM
 .proc op_f8
     lda #FLAG_S
@@ -2018,36 +2274,43 @@ n2: dec sp+1
     lda #$00
     jmp rst
 .endproc
+    
 ;case 0xCF: i8080_call(c, 0x08); break; // RST 1
 .proc op_cf
     lda #$08
     bne rst
 .endproc
+    
 ;case 0xD7: i8080_call(c, 0x10); break; // RST 2
 .proc op_d7
     lda #$10
     bne rst
 .endproc
+    
 ;case 0xDF: i8080_call(c, 0x18); break; // RST 3
 .proc op_df
     lda #$18
     bne rst
 .endproc
+    
 ;case 0xE7: i8080_call(c, 0x20); break; // RST 4
 .proc op_e7
     lda #$20
     bne rst
 .endproc
+    
 ;case 0xEF: i8080_call(c, 0x28); break; // RST 5
 .proc op_ef
     lda #$28
     bne rst
 .endproc
+    
 ;case 0xF7: i8080_call(c, 0x30); break; // RST 6
 .proc op_f7
     lda #$30
     bne rst
 .endproc
+    
 ;case 0xFF: i8080_call(c, 0x38); break; // RST 7
 .proc op_ff
     lda #$38
@@ -2071,11 +2334,13 @@ n2: dec sp+1
     ldy #bc
     bne push8080
 .endproc
+    
 ;case 0xD5: i8080_push_stack(c, i8080_get_de(c)); break; // PUSH D
 .proc op_d5
     ldy #de
     bne push8080
 .endproc
+    
 ;case 0xE5: i8080_push_stack(c, i8080_get_hl(c)); break; // PUSH H
 .proc op_e5
     ldy #hl
@@ -2119,11 +2384,13 @@ n:  inc sp+1
     ldy #bc
     bne pop8080
 .endproc
+    
 ;case 0xD1: i8080_set_de(c, i8080_pop_stack(c)); break; // POP D
 .proc op_d1
     ldy #de
     bne pop8080
 .endproc
+    
 ;case 0xE1: i8080_set_hl(c, i8080_pop_stack(c)); break; // POP H
 .proc op_e1
     ldy #hl
