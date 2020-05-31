@@ -18,6 +18,14 @@ FLAG_C  = $01
  
 .zeropage
 
+tmpptr:     .res 2  ; Must occupy $0000 to make unconditional branches work.
+
+v:          .res 2
+daa_correction:
+tmp:        .res 1
+daa_lsb:    .res 1
+daa_msb:    .res 1
+
 register_start:
 pc:         .res 2
 accu:       .res 1
@@ -36,13 +44,6 @@ flag_i:     .res 1
 
 ptr:        .res 2  ; Shadow PC pointing to BLK3.
 register_end:
-
-v:          .res 2
-daa_correction:
-tmp:        .res 1
-daa_lsb:    .res 1
-daa_msb:    .res 1
-tmpptr:     .res 2
 
 
 .bss
@@ -915,7 +916,7 @@ op_6d = op_00
     adc 0,x
     sta accu
 
-    rol flags   ; Set carry
+    rol flags       ; Copy carry flag
 
     eor 0,x
     eor v
@@ -1062,7 +1063,7 @@ op_6d = op_00
     sbc 0,x
     sta accu
 
-    rol flags   ; Set carry
+    rol flags       ; Copy carry flag
 
     eor 0,x
     eor v
@@ -2107,12 +2108,14 @@ op_fd = op_cd
     and flags
     bne op_dd
     jsr fetch_word
+    jmp next
 .endproc
 
 .proc cond_call_inv
     and flags
     beq op_dd
     jsr fetch_word
+    jmp next
 .endproc
 
 ;case 0xC4: i8080_cond_call(c, c->zf == 0); break; // CNZ
