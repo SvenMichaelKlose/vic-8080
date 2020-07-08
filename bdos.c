@@ -15,9 +15,14 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "main.h"
+#include "memory.h"
+#include "cpu.h"
 
 // BDOS Return codes.
 #define OK              0
@@ -33,28 +38,11 @@ struct fcb_st {
 	FILE    * fp;	// assigned host file
 	int     pos;    // file pointer value
 };
+
 struct fcb_st fcb_table[MAX_OPEN_FILES];
 
 void
-write_filename_to_fcb (uint fcb, uint fn)
-{
-    uint p;
-
-    set (fcb++, 0);
-	ememset (fcb, 32, 8 + 3);
-	if (!get (fm))
-		return;
-
-	p = estrchr (fn, '.');
-	if (p) {
-		move (fcb, fn, p - fn >= 8 ?  8 : p - fn);
-		move (fcb + 8, p + 1, strlen(p + 1) >= 3 ? 3 : strlen(p + 1));
-	} else
-		move (fcb, fn, strlen(fn) > 8 ? 8 : strlen(fn));
-}
-
-void
-fcb_to_filename (uint fcb_addr, uint fn)
+fcb_to_filename (uint fcb_addr, char * fn)
 {
 	int a = 0;
 
@@ -63,7 +51,7 @@ fcb_to_filename (uint fcb_addr, uint fn)
 		if (c <= 32) {
 			if (a == 9) {
                 // empty extension, delete the '.' char was placed for basename/ext separation
-				set (fn - 1, 0);
+				*(fn - 1) = 0;
 				return;
 			}
 			if (a > 9)
@@ -74,12 +62,12 @@ fcb_to_filename (uint fcb_addr, uint fn)
 			a = 8;
 		} else {
 			if (a == 9)
-				set (fn++, '.');
-			set (fn++, (c >= 'a' && c <= 'z') ? c - 0x20 : c);
+				*fn++ = '.';
+			*fn++ = (c >= 'a' && c <= 'z') ? c - 0x20 : c;
 		}
 	}
 
-	set (fn, 0);
+    *fn = 0;
 }
 
 struct fcb_st *
@@ -153,11 +141,6 @@ bdos_open_file (uint fcb_addr, int is_create)
 
 	if (!f) {
 		DEBUG("CPM: %s: cannot open file ...\n", FUNC);
-		DEBUG("CPM: DEBUG: FCB file name area: %02X %02X %02X %02X %02X %02X %02X %02X . %02X %02X %02X\n",
-			set (fcb_addr + 1, get (fcb_addr + 2), get (fcb_addr + 3), get (fcb_addr + 4));
-			set (fcb_addr + 5, get (fcb_addr + 6), get (fcb_addr + 7), get (fcb_addr + 8));
-			set (fcb_addr + 9, get (fcb_addr + 10), get (fcb_addr + 11));
-		);
 		return 1;
 	}
 
@@ -202,7 +185,7 @@ bdos_read_next_record (uint fcb_addr)
 	if (!p)
 		return INVALID_FCB;
 
-	a = fread (memory + dma_address, 1, 128, p->fp);
+	//a = fread (memory + dma_address, 1, 128, p->fp);
 	DEBUG("CPM: READ: read result is %d (0 = EOF)\n", a);
 	if (a <= 0)
 		return END_OF_FILE;
@@ -230,14 +213,19 @@ bdos_random_access_read_record (uint fcb_addr)
 	offs = 128 * (get (fcb_addr + 0x21 | (get (fcb_addr + 0x22) << 8)));
 
 	DEBUG("CPM: RANDOM-ACCESS-READ: file offset = %d\n", offs);
+    /*
 	if (fseek (p->fp, offs, SEEK_SET) < 0) {
 		DEBUG("CPM: RANDOM-ACCESS-READ: Seek ERROR!\n");
 		return OUT_OF_RANGE;
 	}
+    */
 
 	DEBUG("CPM: RANDOM-ACCESS-READ: Seek OK. calling bdos_read_next_record for read ...\n");
 	a = bdos_read_next_record (fcb_addr);
-	fseek (p->fp, offs, SEEK_SET);	// re-seek. According to the spec sequential read should be return with the same record. Odd enough this whole FCB mess ...
+    /*
+    // re-seek. According to the spec sequential read should be return with the same record. Odd enough this whole FCB mess ...
+	fseek (p->fp, offs, SEEK_SET);
+    */
 	return a;
 }
 
@@ -252,7 +240,7 @@ bdos_write_next_record (uint fcb_addr)
 	if (!p)
 		return INVALID_FCB;
 
-	a = fwrite (memory + dma_address, 1, 128, p->fp);
+	//a = fwrite (memory + dma_address, 1, 128, p->fp);
 	DEBUG("CPM: WRITE: write result is %d\n", a);
 	if (a != 128)
 		return DISK_FULL;   // write problem…
@@ -271,10 +259,12 @@ bdos_close_file (uint fcb_addr)
 	return OK; // who cares!!!!! :)
 }
 
+char buffer[256];
+
 void
 bdos_buffered_console_input (uint buf_addr)
 {
-	char buffer[256];
+/*
     char * p;
     uint q;
 
@@ -283,14 +273,15 @@ bdos_buffered_console_input (uint buf_addr)
 
 	if (fgets (buffer, sizeof buffer, stdin)) {
 		p = buffer;
-		q = memory + buf_addr + 1;
-		while (*p && *p != 13 && *p != 10 && memory[buf_addr] < 255) {
+		q = buf_addr + 1;
+		while (*p && *p != 13 && *p != 10 && get (buf_addr) < 255) {
 			set (q++, get (p++));
 			set (buf_addr, get (buf_addr) + 1);
 		}
 		DEBUG("CPM: BUFCONIN: could read %d bytes\n", get (buf_addr));
 	} else
 		DEBUG("CPM: BUFCONIN: cannot read, pass back zero bytes!\n");
+*/
 }
 
 void
@@ -314,7 +305,7 @@ bdos_call (int func)
 
         // console output
 		case 2:
-			putchar (Z80_E);
+			putchar (reg_e);
 			break;
 
         // TODO: Auxiliary input
@@ -343,12 +334,12 @@ bdos_call (int func)
 
         // Output '$' terminated string
 		case 9:
-			bdos_output_string (Z80_DE);
+			bdos_output_string (reg_de);
 			break;
 
         // console input - but TODO: it's not emulated ...
 		case 10:
-			bdos_buffered_console_input (Z80_DE);
+			bdos_buffered_console_input (reg_de);
 			break;
 
         // TODO: Console status
@@ -357,28 +348,28 @@ bdos_call (int func)
 
         // Get version
 		case 12:
-			Z80_A = Z80_L = 0x22;   // version 2.2
-			Z80_B = Z80_H = 0;	    // system type
+			reg_a = reg_l = 0x22;   // version 2.2
+			reg_b = reg_h = 0;	    // system type
 			break;
 
         // Reset disks
 		case 13:
-			Z80_A = Z80_L = 0;
+			reg_a = reg_l = 0;
 			break;
 
         // Select disk, we just fake an OK answer, how cares about drives :)
 		case 14:
-			Z80_A = Z80_L = 0;
+			reg_a = reg_l = 0;
 			break;
 
         // Open file, the horror begins :-/ Nobody likes FCBs, honestly ...
 		case 15: 
-			Z80_A = Z80_L = bdos_open_file (Z80_DE, 0) ? 0xFF : 0;
+			reg_a = reg_l = bdos_open_file (reg_de, 0) ? 0xFF : 0;
 			break;
 
         // CLose file
 		case 16:
-			Z80_A = Z80_L = bdos_close_file (Z80_DE) ? 0xFF : 0;
+			reg_a = reg_l = bdos_close_file (reg_de) ? 0xFF : 0;
 			break;
 
         // TODO: Search for first
@@ -391,22 +382,22 @@ bdos_call (int func)
 
         // Delete file
 		case 19:
-			Z80_A = Z80_L = bdos_delete_file (Z80_DE) ? 0xFF : 0;
+			reg_a = reg_l = bdos_delete_file (reg_de) ? 0xFF : 0;
 			break;
 
         // read next record ...
 		case 20:
-			Z80_A = Z80_L = bdos_read_next_record (Z80_DE);
+			reg_a = reg_l = bdos_read_next_record (reg_de);
 			break;
 
         // write next record ...
 		case 21:
-			Z80_A = Z80_L = bdos_write_next_record (Z80_DE);
+			reg_a = reg_l = bdos_write_next_record (reg_de);
 			break;
 
         // Create file: tricky, according to the spec, if file existed before, user app will be stopped, or whatever ...
 		case 22:
-			Z80_A = Z80_L = bdos_open_file (Z80_DE, 1) ? 0xFF : 0;
+			reg_a = reg_l = bdos_open_file (reg_de, 1) ? 0xFF : 0;
 			break;
 
         // TODO: Rename file
@@ -419,13 +410,13 @@ bdos_call (int func)
 
         // Return current drive. We just fake 0 (A)
 		case 25:
-			Z80_A = Z80_L = 0;
+			reg_a = reg_l = 0;
 			break;
 
         // Set DMA address
 		case 26:
-			DEBUG("CPM: SETDMA: to %04Xh\n", Z80_DE);
-			dma_address = Z80_DE;
+			DEBUG("CPM: SETDMA: to %04Xh\n", reg_de);
+			dma_address = reg_de;
 			break;
 
         // TODO: Get address of allocation map.
@@ -454,7 +445,7 @@ bdos_call (int func)
 
         // Random access read record (note: file pointer should be modified that sequential read reads the SAME [??] record then!!!)
 		case 33:
-			Z80_A = Z80_L = bdos_random_access_read_record (Z80_DE);
+			reg_a = reg_l = bdos_random_access_read_record (reg_de);
 			break;
 
         // TODO: Random-access write.
@@ -471,10 +462,6 @@ bdos_call (int func)
 
         // TODO: Reset drives.
         case 37:
-            break;
-
-        // TODO: Random-access zero fill.
-        case 40:
             break;
 
         // TODO: Random-access zero fill.

@@ -1,4 +1,5 @@
-ASMSOURCES=main.asm bios.asm
+ASMSOURCES=cpu.asm bios.asm
+SOURCES=bdos.c main.c memory.c
 PROGRAM=cpm
 
 CC65_HOME = /usr/local
@@ -17,7 +18,7 @@ LDFLAGS = -m $(PROGRAM).map
 	$(CC) -c $(CFLAGS) -o $@ $<
 
 $(PROGRAM): $(SOURCES:.c=.o) $(ASMSOURCES:.asm=.o)
-	$(LD) -C vic20-32k.cfg -m $@.map -Ln $(PROGRAM).lst -o $@ $^ /usr/local/share/cc65/lib/vic20.lib
+	$(LD) -C vic20.cfg -m $@.map -Ln $(PROGRAM).lst -o $@ $^ /usr/local/share/cc65/lib/vic20.lib
 
 all: $(PROGRAM)
 
