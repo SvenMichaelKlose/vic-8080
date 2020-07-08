@@ -4,6 +4,6 @@
 #define BDOS_ENTRY_ADDR		    0xFD00
 #define MAX_OPEN_FILES          8
 
-#define DEBUG(...)              fprintf(stderr, __VA_ARGS__)
+#define DEBUG(...)              //fprintf(stderr, __VA_ARGS__)
 
 typedef unsigned int uint;

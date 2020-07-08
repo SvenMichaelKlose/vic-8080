@@ -49,8 +49,6 @@ TODO for the VIC:
 #define MAX_OPEN_FILES          8
 #define ERROR                   255
 
-#define DEBUG(...)              fprintf(stderr, __VA_ARGS__)
-
 void
 write_filename_to_fcb (uint fcb, char * fn)
 {
