@@ -15,10 +15,35 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
+/*
+
+TODO for the VIC:
+
+* Functions to copy between host and emulated RAM.
+* Functions to get/set singe bytes in emulated RAM.
+* Adapt the rest.
+* Connect to 8080 emulation.
+* Finish implementing 8080 emulation.
+* Wedge in the 40-column renderer from G.
+* Implement terminal emulation as described in bios.asm.
+* Bang head on keyboard… emulation.
+* Patch WordStar and Turbo Pascal to run in 40-column mode.
+* Add a FE3 driver.
+* Release on April Fool's day.
+
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "hardware.h"
+
+extern void set     (uint addr, char v);
+extern char get     (uint addr);
+extern void export  (void * from, uint to, size_t len);
+extern void import  (uint from, void * to, size_t len);
+extern void move    (uint from, uint to, size_t len);
+extern void ememset (uint to, size_t len, char v);
+extern uint estrchr (uint addr, char v);
 
 #define ED_TRAP_OPCODE	        0xBC
 #define CBIOS_JUMP_TABLE_ADDR	0xFE00
@@ -28,148 +53,69 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #define DEBUG(...)              fprintf(stderr, __VA_ARGS__)
 
-typedef unsinged int    uint;
+// BDOS Return codes.
+#define OK              0
+#define END_OF_FILE     1
+#define DISK_FULL       2
+#define OUT_OF_RANGE    6
+#define INVALID_FCB     9
+
+typedef unsinged int uint;
 
 uint dma_address = 0x80;
 
 struct fcb_st {
-	int     addr;	// Z80 FCB address
+	int     addr;	// FCB address in emulated memory
 	FILE    * fp;	// assigned host file
 	int     pos;    // file pointer value
 };
 struct fcb_st fcb_table[MAX_OPEN_FILES];
 
 void
-write_filename_to_fcb (uint fcb_addr, const char *fn)
+write_filename_to_fcb (uint fcb, uint fn)
 {
-	char *fcb = (char *) memory + fcb_addr, *p;
+    uint p;
 
-	*(fcb++) = 0;
-	memset (fcb, 32, 8 + 3);
-	if (!*fn)
+    set (fcb++, 0);
+	ememset (fcb, 32, 8 + 3);
+	if (!get (fm))
 		return;
 
-	p = strchr(fn, '.');
+	p = estrchr (fn, '.');
 	if (p) {
-		memcpy(fcb, fn, p - fn >= 8 ?  8 : p - fn);
-		memcpy(fcb + 8, p + 1, strlen(p + 1) >= 3 ? 3 : strlen(p + 1));
+		move (fcb, fn, p - fn >= 8 ?  8 : p - fn);
+		move (fcb + 8, p + 1, strlen(p + 1) >= 3 ? 3 : strlen(p + 1));
 	} else
-		memcpy(fcb, fn, strlen(fn) > 8 ? 8 : strlen(fn));
+		move (fcb, fn, strlen(fn) > 8 ? 8 : strlen(fn));
 }
 
-/* Intitialize CP/M emulation */
-int
-cpm_init (int argc, char **argv)
-{
-	FILE    *f;
-	int     a;
-
-	if (argc < 2) {
-		fprintf (stderr, "Usage error: at least one parameter expected, the name of the CP/M program\nAfter that, you can give the switches/etc for the CP/M program itself\n");
-		return 1;
-	}
-
-	/* Our ugly FCB to host file handle table ... */
-	for (a = 0; a < MAX_OPEN_FILES; a++)
-		fcb_table[a].addr = -1;
-
-	// memory init
-	memset (memory, 0, sizeof memory);
-
-	/* create jump table for CBIOS emulation, actually they're CPU traps, and RET! */
-	for (a = 0; a < CBIOS_ENTRIES; a++) {
-		memory[CBIOS_JUMP_TABLE_ADDR + a * 3 + 0] = 0xED;
-		memory[CBIOS_JUMP_TABLE_ADDR + a * 3 + 1] = ED_TRAP_OPCODE;
-		memory[CBIOS_JUMP_TABLE_ADDR + a * 3 + 2] = 0xC9;	// RET opcode ...
-	}
-
-	/* create a single trap entry for BDOS emulation */
-	memory[BDOS_ENTRY_ADDR + 0] = 0xED;
-	memory[BDOS_ENTRY_ADDR + 1] = ED_TRAP_OPCODE;
-	memory[BDOS_ENTRY_ADDR + 2] = 0xC9;		// RET opcode ...
-
-	// std CP/M BDOS entry point in the low memory area ...
-	memory[5] = 0xC3;	// JP opcode
-	memory[6] = BDOS_ENTRY_ADDR & 0xFF;
-	memory[7] = BDOS_ENTRY_ADDR >> 8;
-
-	// CP/M CBIOS stuff
-	memory[0] = 0xC3;	// JP opcode
-	memory[1] = (CBIOS_JUMP_TABLE_ADDR + 3) & 0xFF;
-	memory[2] = (CBIOS_JUMP_TABLE_ADDR + 3) >> 8;
-
-	// Disk I/O byte etc
-	memory[3] = 0;
-	memory[4] = 0;
-
-	// Now fill buffer of the command line
-	memory[0x81] = 0;
-	memset (memory + 0x5C + 1, 32, 11);
-	memset (memory + 0x6C + 1, 32, 11);
-	for (a = 2; a < argc; a++) {
-		if (a <= 3)
-			write_filename_to_fcb(a == 2 ? 0x5C : 0x6C, argv[a]);
-		if (memory[0x81])
-			strcat ((char*) memory + 0x81, " ");
-		strcat ((char*) memory + 0x81, argv[a]);
-		if (strlen ((char*) memory + 0x81) > 0x7F) {
-			fprintf (stderr, "Too long command line for the CP/M program!\n");
-			return 1;
-		}
-	}
-	memory[0x80] = strlen ((char*) memory + 0x81);
-
-	// Load program
-	f = fopen (argv[1], "rb");
-	if (!f) {
-		fprintf (stderr, "Cannot open program file: %s\n", argv[1]);
-		return 1;
-	}
-
-	a = fread (memory + 0x100, 1, BDOS_ENTRY_ADDR - 0x100 + 1, f);
-	fclose (f);
-	if (a < 10) {
-		fprintf (stderr, "Too short CP/M program file: %s\n", argv[1]);
-		return 1;
-	}
-	if (a > 0xC000) {
-		fprintf (stderr, "Too large CP/M program file: %s\n", argv[1]);
-		return 1;
-	}
-
-	Z80_PC = 0x100;
-	Z80_SP = BDOS_ENTRY_ADDR;
-	DEBUG("*** Starting program: %s with parameters %s\n", argv[1], (char*) memory + 0x81);
-
-	return 0;
-}
-
-//             111
-//   0123456789012
-//    FILENAMEext
 void
-fcb_to_filename (uint fcb_addr, char * fn)
+fcb_to_filename (uint fcb_addr, uint fn)
 {
 	int a = 0;
 
 	while (a < 11) {
-		char c = memory[++a + fcb_addr] & 127;
+		char c = get (++a + fcb_addr) & 127;
 		if (c <= 32) {
 			if (a == 9) {
-				*(fn - 1) = 0;	// empty extension, delete the '.' char was placed for basename/ext separation
-				return;		// and end of work
+                // empty extension, delete the '.' char was placed for basename/ext separation
+				set (fn - 1, 0);
+				return;
 			}
 			if (a > 9)
 				break;
 			//*(fn++) = '.';
-			a = 8;	// this will be pre-incremented in the next iteration
+
+            // this will be pre-incremented in the next iteration
+			a = 8;
 		} else {
 			if (a == 9)
-				*(fn++) = '.';
-			*(fn++) = (c >= 'a' && c <= 'z') ? c - 0x20 : c;
+				set (fn++, '.');
+			set (fn++, (c >= 'a' && c <= 'z') ? c - 0x20 : c);
 		}
 	}
-	*fn = 0;
+
+	set (fn, 0);
 }
 
 struct fcb_st *
@@ -187,7 +133,7 @@ fcb_search (int fcb_addr)
 struct fcb_st *
 fcb_free (uint fcb_addr)
 {
-	struct fcb_st *p = fcb_search(fcb_addr);
+	struct fcb_st * p = fcb_search (fcb_addr);
 
 	if (p) {
 		DEBUG("EMU: fcb_free found open file, closing it %p\n", p->fp);
@@ -200,9 +146,10 @@ fcb_free (uint fcb_addr)
 }
 
 struct fcb_st *
-fcb_alloc (uint fcb_addr, FILE *fp)
+fcb_alloc (uint fcb_addr, FILE * fp)
 {
-	struct fcb_st *p = fcb_free(fcb_addr);	// we use this to also FREE if was used before for whatever reason ...
+    // we use this to also FREE if was used before for whatever reason ...
+	struct fcb_st * p = fcb_free (fcb_addr);
 
 	if (!p) {	// if not used before ...
 		p = fcb_search (-1);    // search for empty slot
@@ -220,12 +167,12 @@ fcb_alloc (uint fcb_addr, FILE *fp)
 int
 bdos_open_file (uint fcb_addr, int is_create)
 {
-	FILE        *f;
+	FILE        * f;
 	char        fn[14];
 	struct      fcb_st *p;
-	const char  *FUNC = is_create ? "CREATE" : "OPEN";
+	const char  * FUNC = is_create ? "CREATE" : "OPEN";
 
-	fcb_to_filename(fcb_addr, fn);
+	fcb_to_filename (fcb_addr, fn);
 	DEBUG("CPM: %s: filename=\"%s\" FCB=%04Xh create?=%d\n", FUNC, fn, fcb_addr, is_create);
 
 	// TODO: no unlocked mode, no read-only mode ...
@@ -243,9 +190,9 @@ bdos_open_file (uint fcb_addr, int is_create)
 	if (!f) {
 		DEBUG("CPM: %s: cannot open file ...\n", FUNC);
 		DEBUG("CPM: DEBUG: FCB file name area: %02X %02X %02X %02X %02X %02X %02X %02X . %02X %02X %02X\n",
-			memory[fcb_addr + 1], memory[fcb_addr + 2], memory[fcb_addr + 3], memory[fcb_addr + 4],
-			memory[fcb_addr + 5], memory[fcb_addr + 6], memory[fcb_addr + 7], memory[fcb_addr + 8],
-			memory[fcb_addr + 9], memory[fcb_addr + 10], memory[fcb_addr + 11]
+			set (fcb_addr + 1, get (fcb_addr + 2), get (fcb_addr + 3), get (fcb_addr + 4));
+			set (fcb_addr + 5, get (fcb_addr + 6), get (fcb_addr + 7), get (fcb_addr + 8));
+			set (fcb_addr + 9, get (fcb_addr + 10), get (fcb_addr + 11));
 		);
 		return 1;
 	}
@@ -259,7 +206,7 @@ bdos_open_file (uint fcb_addr, int is_create)
 
 	// OK, everything seems to be OK! Let's fill the rest of the FCB ...
 	DEBUG("CPM: %s: seems to be OK :-)\n", FUNC);
-	memset (memory + fcb_addr + 0x10, 0, 20);
+	ememset (fcb_addr + 0x10, 0, 20);
 
 	return 0;
 }
@@ -270,52 +217,58 @@ bdos_delete_file (uint fcb_addr)
 	char    fn[14];
 	int     a;
 
-	fcb_free(fcb_addr);
+	fcb_free (fcb_addr);
 
 	// FIXME: ? characters are NOT supported!!!
-	fcb_to_filename(fcb_addr, fn);
-	DEBUG("CPM: DELETE: filename=\"%s\" FCB=%04Xh\n", fn, fcb_addr);
-	a = remove(fn);
-	DEBUG("CPM: DELETE: remove operation result = %d\n", a);
+	fcb_to_filename (fcb_addr, fn);
+	a = remove (fn);
 
 	return a;
 }
 
+// TODO: Cannot read directly into emulated RAM.
+// Read chunks and copy those.
 int
 bdos_read_next_record (uint fcb_addr)
 {
-	struct fcb_st * p = fcb_search(fcb_addr);
+	struct fcb_st * p = fcb_search (fcb_addr);
 	int a;
 
 	DEBUG("CPM: READ: FCB=%04Xh VALID?=%s DMA=%04Xh\n", fcb_addr, p ? "YES" : "NO", dma_address);
 	if (!p)
-		return 9;	// invalid FCB
+		return INVALID_FCB;
 
-	a = fread(memory + dma_address, 1, 128, p->fp);
+	a = fread (memory + dma_address, 1, 128, p->fp);
 	DEBUG("CPM: READ: read result is %d (0 = EOF)\n", a);
 	if (a <= 0)
-		return 1;	// end of file
-	if (a < 128)		// fill the rest of the buffer, if not a full 128 bytes record could be read
-		memset(memory + dma_address + a, 0, 128 - a);
+		return END_OF_FILE;
 
-	return 0;
+    // fill the rest of the buffer, if not a full 128 bytes record could be read
+	if (a < 128)
+		ememset (dma_address + a, 0, 128 - a);
+
+	return OK;
 }
 
+// TODO: Read into regular RAM, then copy.
 int
 bdos_random_access_read_record (uint fcb_addr)
 {
-	struct fcb_st * p = fcb_search(fcb_addr);
-	int offs, a;
+	struct fcb_st * p = fcb_search (fcb_addr);
+	int     offs;
+    int     a;
 
 	DEBUG("CPM: RANDOM-ACCESS-READ: FCB=%04Xh VALID?=%s DMA=%04Xh\n", fcb_addr, p ? "YES" : "NO", dma_address);
 	if (!p)
-		return 9;	// invalid FCB
+		return INVALID_FCB;
 
-	offs = 128 * (memory[fcb_addr + 0x21] | (memory[fcb_addr + 0x22] << 8));	// FIXME: is this more than 16 bit?
+    // FIXME: is this more than 16 bit?
+	offs = 128 * (get (fcb_addr + 0x21 | (get (fcb_addr + 0x22) << 8)));
+
 	DEBUG("CPM: RANDOM-ACCESS-READ: file offset = %d\n", offs);
 	if (fseek (p->fp, offs, SEEK_SET) < 0) {
 		DEBUG("CPM: RANDOM-ACCESS-READ: Seek ERROR!\n");
-		return 6;	// out of range
+		return OUT_OF_RANGE;
 	}
 
 	DEBUG("CPM: RANDOM-ACCESS-READ: Seek OK. calling bdos_read_next_record for read ...\n");
@@ -324,51 +277,54 @@ bdos_random_access_read_record (uint fcb_addr)
 	return a;
 }
 
+// TODO: Copy from emulated RAM, then write.  In chunks.
 int
 bdos_write_next_record (uint fcb_addr)
 {
-	struct fcb_st * p = fcb_search(fcb_addr);
+	struct fcb_st * p = fcb_search (fcb_addr);
 	int a;
 
 	DEBUG("CPM: WRITE: FCB=%04Xh VALID?=%s DMA=%04Xh\n", fcb_addr, p ? "YES" : "NO", dma_address);
 	if (!p)
-		return 9;	// invalid FCB
+		return INVALID_FCB;
 
-	a = fwrite(memory + dma_address, 1, 128, p->fp);
+	a = fwrite (memory + dma_address, 1, 128, p->fp);
 	DEBUG("CPM: WRITE: write result is %d\n", a);
 	if (a != 128)
-		return 2;	// report disk full in case of write problem ...
+		return DISK_FULL;   // write problem…
 
-	return 0;
+	return OK;
 }
 
 int
 bdos_close_file (uint fcb_addr)
 {
-	struct fcb_st *p = fcb_search(fcb_addr);
+	struct fcb_st * p = fcb_search (fcb_addr);
 
 	DEBUG("CPM: CLOSE: FCB=%04Xh VALID?=%s\n", fcb_addr, p ? "YES" : "NO");
-	fcb_free(fcb_addr);
+	fcb_free (fcb_addr);
 
-	return 0; // who cares!!!!! :)
+	return OK; // who cares!!!!! :)
 }
 
 void
 bdos_buffered_console_input (uint buf_addr)
 {
 	char buffer[256];
+    char * p;
+    uint q;
 
 	DEBUG("CPM: BUFCONIN: console input, buffer = %04Xh\n", buf_addr);
-	memory[buf_addr] = 0;
+	set (buf_addr, 0);
 
-	if (fgets(buffer, sizeof buffer, stdin)) {
-		char *p = buffer;
-		char *q = (char*)memory + buf_addr + 1;
+	if (fgets (buffer, sizeof buffer, stdin)) {
+		p = buffer;
+		q = memory + buf_addr + 1;
 		while (*p && *p != 13 && *p != 10 && memory[buf_addr] < 255) {
-			*(q++) = *(p++);
-			memory[buf_addr]++;
+			set (q++, get (p++));
+			set (buf_addr, get (buf_addr) + 1);
 		}
-		DEBUG("CPM: BUFCONIN: could read %d bytes\n", memory[buf_addr]);
+		DEBUG("CPM: BUFCONIN: could read %d bytes\n", get (buf_addr));
 	} else
 		DEBUG("CPM: BUFCONIN: cannot read, pass back zero bytes!\n");
 }
@@ -376,10 +332,8 @@ bdos_buffered_console_input (uint buf_addr)
 void
 bdos_output_string (uint addr)
 {
-	char *p = (char*)memory + addr;
-
-	while (*p != '$')
-		putchar(*(p++));
+	while (get (addr) != '$')
+		putchar (get (addr++));
 }
 
 void
@@ -389,7 +343,6 @@ bdos_call (int func)
         // console output
 		case 2:
 			putchar (Z80_E);
-			//fsync(stdout);
 			break;
 
         // Output '$' terminated string
@@ -420,32 +373,32 @@ bdos_call (int func)
 
         // Open file, the horror begins :-/ Nobody likes FCBs, honestly ...
 		case 15: 
-			Z80_A = Z80_L = bdos_open_file(Z80_DE, 0) ? 0xFF : 0;
+			Z80_A = Z80_L = bdos_open_file (Z80_DE, 0) ? 0xFF : 0;
 			break;
 
         // CLose file
 		case 16:
-			Z80_A = Z80_L = bdos_close_file(Z80_DE) ? 0xFF : 0;
+			Z80_A = Z80_L = bdos_close_file (Z80_DE) ? 0xFF : 0;
 			break;
 
         // Delete file
 		case 19:
-			Z80_A = Z80_L = bdos_delete_file(Z80_DE) ? 0xFF : 0;
+			Z80_A = Z80_L = bdos_delete_file (Z80_DE) ? 0xFF : 0;
 			break;
 
         // read next record ...
 		case 20:
-			Z80_A = Z80_L = bdos_read_next_record(Z80_DE);
+			Z80_A = Z80_L = bdos_read_next_record (Z80_DE);
 			break;
 
         // write next record ...
 		case 21:
-			Z80_A = Z80_L = bdos_write_next_record(Z80_DE);
+			Z80_A = Z80_L = bdos_write_next_record (Z80_DE);
 			break;
 
         // Create file: tricky, according to the spec, if file existed before, user app will be stopped, or whatever ...
 		case 22:
-			Z80_A = Z80_L = bdos_open_file(Z80_DE, 1) ? 0xFF : 0;
+			Z80_A = Z80_L = bdos_open_file (Z80_DE, 1) ? 0xFF : 0;
 			break;
 
         // Return current drive. We just fake 0 (A)
@@ -461,22 +414,114 @@ bdos_call (int func)
 
         // Random access read record (note: file pointer should be modified that sequential read reads the SAME [??] record then!!!)
 		case 33:
-			Z80_A = Z80_L = bdos_random_access_read_record(Z80_DE);
+			Z80_A = Z80_L = bdos_random_access_read_record (Z80_DE);
 			break;
 
 		default:
 			DEBUG("CPM: BDOS: FATAL: unsupported call %d\n", func);
-			exit(1);
+			exit (1);
+	}
+}
+
+// TODO: Read into regular RAM and copy in chunks.
+void
+load_program ()
+{
+	FILE * f = fopen (argv[1], "rb");
+
+	if (!f) {
+		fprintf (stderr, "Cannot open program file: %s\n", argv[1]);
+		return 1;
+	}
+
+	a = fread (memory + 0x100, 1, BDOS_ENTRY_ADDR - 0x100 + 1, f);
+	fclose (f);
+	if (a < 10) {
+		fprintf (stderr, "Too short CP/M program file: %s\n", argv[1]);
+		return 1;
+	}
+	if (a > 0xC000) {
+		fprintf (stderr, "Too large CP/M program file: %s\n", argv[1]);
+		return 1;
 	}
 }
 
 int
-main (int argc, char **argv)
+cpm_init (int argc, char ** argv)
 {
-	if (cpm_init(argc, argv))
+	int a;
+
+	if (argc < 2) {
+		fprintf (stderr, "Usage error: at least one parameter expected, the name of the CP/M program\nAfter that, you can give the switches/etc for the CP/M program itself\n");
 		return 1;
-	for (;;) {
-		z80ex_step();
 	}
+
+	/* Our ugly FCB to host file handle table… */
+	for (a = 0; a < MAX_OPEN_FILES; a++)
+		fcb_table[a].addr = -1;
+
+	/* create jump table for CBIOS emulation, actually they're CPU traps, and RET! */
+	for (a = 0; a < CBIOS_ENTRIES; a++) {
+		set (CBIOS_JUMP_TABLE_ADDR + a * 3 + 0, 0xED);
+		set (CBIOS_JUMP_TABLE_ADDR + a * 3 + 1, ED_TRAP_OPCODE);
+		set (CBIOS_JUMP_TABLE_ADDR + a * 3 + 2, 0xC9);	// RET opcode…
+	}
+
+	/* create a single trap entry for BDOS emulation */
+	set (BDOS_ENTRY_ADDR + 0, 0xED);
+	set (BDOS_ENTRY_ADDR + 1, ED_TRAP_OPCODE);
+	set (BDOS_ENTRY_ADDR + 2, 0xC9);    // RET opcode…
+
+	// std CP/M BDOS entry point in the low memory area…
+	set (5, 0xC3);                      // JP opcode
+	set (6, BDOS_ENTRY_ADDR & 0xFF);
+	set (7, BDOS_ENTRY_ADDR >> 8);
+
+	// CP/M CBIOS stuff
+	set (0, 0xC3;	// JP opcode
+	set (1, (CBIOS_JUMP_TABLE_ADDR + 3) & 0xFF);
+	set (2, (CBIOS_JUMP_TABLE_ADDR + 3) >> 8);
+
+	// Disk I/O byte etc
+	set (3, 0);
+	set (4, 0);
+
+	// Now fill buffer of the command line
+	set (0x81, 0);
+	ememset (0x5C + 1, 32, 11);
+	ememset (0x6C + 1, 32, 11);
+	for (a = 2; a < argc; a++) {
+		if (a <= 3)
+			write_filename_to_fcb (a == 2 ? 0x5C : 0x6C, argv[a]);
+		if (get (0x81))
+			estrcat (0x81, " ");
+		estrcat (0x81, argv[a]);
+		if (estrlen (0x81) > 0x7F) {
+			fprintf (stderr, "Too long command line for the CP/M program!\n");
+			return 1;
+		}
+	}
+	set (0x80, estrlen (0x81));
+
+    load_program ();
+
+	Z80_PC = 0x100;
+	Z80_SP = BDOS_ENTRY_ADDR;
+	DEBUG("*** Starting program: %s with parameters %s\n", argv[1], (char *) memory + 0x81);
+
+	return 0;
+}
+
+
+int
+main (int argc, char ** argv)
+{
+    // TODO: Init terminal emulation.
+
+	if (cpm_init (argc, argv))
+		return 1;
+
+    // TODO: Call 8080 emulation here.
+
 	return 0;
 }
