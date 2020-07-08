@@ -28,8 +28,9 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 #define DEBUG(...)              fprintf(stderr, __VA_ARGS__)
 
+typedef unsinged int    uint;
 
-Uint16 dma_address = 0x80;
+uint dma_address = 0x80;
 
 struct fcb_st {
 	int     addr;	// Z80 FCB address
@@ -39,7 +40,7 @@ struct fcb_st {
 struct fcb_st fcb_table[MAX_OPEN_FILES];
 
 void
-write_filename_to_fcb (Uint16 fcb_addr, const char *fn)
+write_filename_to_fcb (uint fcb_addr, const char *fn)
 {
 	char *fcb = (char *) memory + fcb_addr, *p;
 
@@ -147,7 +148,7 @@ cpm_init (int argc, char **argv)
 //   0123456789012
 //    FILENAMEext
 void
-fcb_to_filename (Uint16 fcb_addr, char * fn)
+fcb_to_filename (uint fcb_addr, char * fn)
 {
 	int a = 0;
 
@@ -184,7 +185,7 @@ fcb_search (int fcb_addr)
 }
 
 struct fcb_st *
-fcb_free (Uint16 fcb_addr)
+fcb_free (uint fcb_addr)
 {
 	struct fcb_st *p = fcb_search(fcb_addr);
 
@@ -199,7 +200,7 @@ fcb_free (Uint16 fcb_addr)
 }
 
 struct fcb_st *
-fcb_alloc (Uint16 fcb_addr, FILE *fp)
+fcb_alloc (uint fcb_addr, FILE *fp)
 {
 	struct fcb_st *p = fcb_free(fcb_addr);	// we use this to also FREE if was used before for whatever reason ...
 
@@ -217,7 +218,7 @@ fcb_alloc (Uint16 fcb_addr, FILE *fp)
 }
 
 int
-bdos_open_file (Uint16 fcb_addr, int is_create)
+bdos_open_file (uint fcb_addr, int is_create)
 {
 	FILE        *f;
 	char        fn[14];
@@ -264,7 +265,7 @@ bdos_open_file (Uint16 fcb_addr, int is_create)
 }
 
 int
-bdos_delete_file (Uint16 fcb_addr)
+bdos_delete_file (uint fcb_addr)
 {
 	char    fn[14];
 	int     a;
@@ -281,7 +282,7 @@ bdos_delete_file (Uint16 fcb_addr)
 }
 
 int
-bdos_read_next_record (Uint16 fcb_addr)
+bdos_read_next_record (uint fcb_addr)
 {
 	struct fcb_st * p = fcb_search(fcb_addr);
 	int a;
@@ -301,7 +302,7 @@ bdos_read_next_record (Uint16 fcb_addr)
 }
 
 int
-bdos_random_access_read_record (Uint16 fcb_addr)
+bdos_random_access_read_record (uint fcb_addr)
 {
 	struct fcb_st * p = fcb_search(fcb_addr);
 	int offs, a;
@@ -324,7 +325,7 @@ bdos_random_access_read_record (Uint16 fcb_addr)
 }
 
 int
-bdos_write_next_record (Uint16 fcb_addr)
+bdos_write_next_record (uint fcb_addr)
 {
 	struct fcb_st * p = fcb_search(fcb_addr);
 	int a;
@@ -342,7 +343,7 @@ bdos_write_next_record (Uint16 fcb_addr)
 }
 
 int
-bdos_close_file (Uint16 fcb_addr)
+bdos_close_file (uint fcb_addr)
 {
 	struct fcb_st *p = fcb_search(fcb_addr);
 
@@ -353,7 +354,7 @@ bdos_close_file (Uint16 fcb_addr)
 }
 
 void
-bdos_buffered_console_input (Uint16 buf_addr)
+bdos_buffered_console_input (uint buf_addr)
 {
 	char buffer[256];
 
@@ -373,7 +374,7 @@ bdos_buffered_console_input (Uint16 buf_addr)
 }
 
 void
-bdos_output_string (Uint16 addr)
+bdos_output_string (uint addr)
 {
 	char *p = (char*)memory + addr;
 
