@@ -41,7 +41,7 @@ struct fcb_st {
 
 struct fcb_st fcb_table[MAX_OPEN_FILES];
 
-void
+void __fastcall__
 fcb_to_filename (uint fcb_addr, char * fn)
 {
 	int a = 0;
@@ -70,8 +70,8 @@ fcb_to_filename (uint fcb_addr, char * fn)
     *fn = 0;
 }
 
-struct fcb_st *
-fcb_search (int fcb_addr)
+struct fcb_st * __fastcall__
+fcb_search (uint fcb_addr)
 {
 	int a;
 
@@ -82,7 +82,7 @@ fcb_search (int fcb_addr)
 	return NULL;
 }
 
-struct fcb_st *
+struct fcb_st * __fastcall__
 fcb_free (uint fcb_addr)
 {
 	struct fcb_st * p = fcb_search (fcb_addr);
@@ -97,7 +97,7 @@ fcb_free (uint fcb_addr)
 	return NULL;
 }
 
-struct fcb_st *
+struct fcb_st * __fastcall__
 fcb_alloc (uint fcb_addr, FILE * fp)
 {
     // we use this to also FREE if was used before for whatever reason ...
@@ -116,8 +116,8 @@ fcb_alloc (uint fcb_addr, FILE * fp)
 	return p;
 }
 
-int
-bdos_open_file (uint fcb_addr, int is_create)
+int __fastcall__
+bdos_open_file (uint fcb_addr, char is_create)
 {
 	FILE        * f;
 	char        fn[14];
@@ -158,7 +158,7 @@ bdos_open_file (uint fcb_addr, int is_create)
 	return 0;
 }
 
-int
+int __fastcall__
 bdos_delete_file (uint fcb_addr)
 {
 	char    fn[14];
@@ -175,7 +175,7 @@ bdos_delete_file (uint fcb_addr)
 
 // TODO: Cannot read directly into emulated RAM.
 // Read chunks and copy those.
-int
+int __fastcall__
 bdos_read_next_record (uint fcb_addr)
 {
 	struct fcb_st * p = fcb_search (fcb_addr);
@@ -198,7 +198,7 @@ bdos_read_next_record (uint fcb_addr)
 }
 
 // TODO: Read into regular RAM, then copy.
-int
+int __fastcall__
 bdos_random_access_read_record (uint fcb_addr)
 {
 	struct fcb_st * p = fcb_search (fcb_addr);
@@ -230,7 +230,7 @@ bdos_random_access_read_record (uint fcb_addr)
 }
 
 // TODO: Copy from emulated RAM, then write.  In chunks.
-int
+int __fastcall__
 bdos_write_next_record (uint fcb_addr)
 {
 	struct fcb_st * p = fcb_search (fcb_addr);
@@ -248,7 +248,7 @@ bdos_write_next_record (uint fcb_addr)
 	return OK;
 }
 
-int
+int __fastcall__
 bdos_close_file (uint fcb_addr)
 {
 	struct fcb_st * p = fcb_search (fcb_addr);
@@ -261,7 +261,7 @@ bdos_close_file (uint fcb_addr)
 
 char buffer[256];
 
-void
+void __fastcall__
 bdos_buffered_console_input (uint buf_addr)
 {
 /*
@@ -284,15 +284,15 @@ bdos_buffered_console_input (uint buf_addr)
 */
 }
 
-void
+void __fastcall__
 bdos_output_string (uint addr)
 {
 	while (get (addr) != '$')
 		putchar (get (addr++));
 }
 
-void
-bdos_call (int func)
+void __fastcall__
+bdos_call (char func)
 {
 	switch (func) {
         // TODO: system reset
