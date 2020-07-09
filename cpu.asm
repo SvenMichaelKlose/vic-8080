@@ -51,6 +51,13 @@ h:          .res 1
 l:          .res 1
 sp:         .res 2
 flag_i:     .res 1
+first_register_end:
+
+second_register_start:
+accu_:      .res 1
+flags_:     .res 1
+            .res 8
+second_register_end:
 
 ptr:        .res 2  ; Shadow PC pointing to BLK3.
 register_end:
@@ -297,13 +304,95 @@ n:  sta flags
     rts
 .endproc
 
-op_08 = op_00
-op_10 = op_00
-op_18 = op_00
-op_20 = op_00
-op_28 = op_00
-op_30 = op_00
-op_38 = op_00
+; Z80: EX AF,AF'
+.proc op_08
+    lda accu
+    ldx accu_
+    stx accu
+    ldx accu_
+    lda flags
+    ldx flags_
+    stx flags
+    ldx flags_
+    jmp next
+.endproc
+
+; Z80: DJNZ
+.proc op_10
+    jsr fetch_byte
+
+    dec b
+    bne relative_jump
+
+n2: jmp next
+.endproc
+
+; Z80: JR
+.proc op_18
+    jsr fetch_byte
+.endproc
+
+.proc relative_jump
+    ; Convert byte to word.
+    sta tmp
+    ldx #0
+    stx tmp+1
+    cmp #0
+    bpl n2
+    dec tmp+1
+
+    ; Add to PC.
+n2: lda pc
+    clc
+    adc tmp
+    sta pc
+    lda pc+1
+    adc tmp+1
+    sta pc+1
+    jmp next_rebanked
+.endproc
+
+.proc cond_relative_jump
+    and flags
+    beq n
+    jsr fetch_byte
+    bne relative_jump   ; (jmp)
+n:  jsr fetch_byte
+    jmp next
+.endproc
+
+.proc cond_relative_jump_inv
+    and flags
+    bne n
+    jsr fetch_byte
+    bne relative_jump  ; (jmp)
+n:  jsr fetch_byte
+    jmp next
+.endproc
+
+; JR NZ,p
+.proc op_20
+    lda #FLAG_Z
+    bne cond_relative_jump_inv  ; (jmp)
+.endproc
+
+; JR Z
+.proc op_28
+    lda #FLAG_Z
+    bne cond_relative_jump      ; (jmp)
+.endproc
+
+; JR NC,p
+.proc op_30
+    lda #FLAG_C
+    bne cond_relative_jump_inv  ; (jmp)
+.endproc
+
+; JR C,p
+.proc op_38
+    lda #FLAG_C
+    bne cond_relative_jump      ; (jmp)
+.endproc
 
 ;case 0x76: c->halted = 1; break; // HLT
 .proc op_76
@@ -2050,7 +2139,106 @@ n4: clc
     jmp next_rebanked
 .endproc
 
-op_cb = op_c3
+; Z80: Call bit instructions
+.proc op_cb
+    jsr fetch_byte
+    tax
+;    lda bits_opcodes_l,x
+    pha
+;    lda bits_opcodes_h,x
+    pha
+    rts
+.endproc
+
+; Z80: RLC rb
+.proc op_rlc_rb
+    lsr flags
+    lda 0,x
+    rol
+    sta v
+    php
+    rol flags
+    plp
+    rol 0,x
+    jmp get_flags
+.endproc
+
+; Z80: RLC (HL)
+.proc op_rlc_hl
+    lsr flags
+    ldy #0
+    lda (hl),y
+    rol
+    sta v
+    php
+    rol flags
+    lda (hl),y
+    plp
+    rol
+    sta (hl),y
+    jmp get_flags
+.endproc
+
+; Z80: RRC rb
+.proc op_rrc_rb
+    lsr flags
+    lda 0,x
+    ror
+    sta v
+    php
+    rol flags
+    plp
+    ror 0,x
+    jmp get_flags
+.endproc
+
+; Z80: RRC (HL)
+.proc op_rrc_hl
+    lsr flags
+    ldy #0
+    lda (hl),y
+    ror
+    sta v
+    php
+    rol flags
+    lda (hl),y
+    plp
+    ror
+    sta (hl),y
+    jmp get_flags
+.endproc
+
+; Z80: RL rb
+.proc op_rl_rb
+    lsr flags
+    rol 0,x
+    rol flags
+    lda 0,x
+    sta v
+    jmp get_flags
+.endproc
+
+; Z80: RL (HL)
+.proc op_rl_hl
+    lsr flags
+    ldy #0
+    lda (hl),y
+    rol
+    sta v
+    sta (hl),y
+    rol flags
+    jmp get_flags
+.endproc
+
+; Z80: RR rb
+.proc op_rr_rb
+    lsr flags
+    ror 0,x
+    rol flags
+    lda 0,x
+    sta v
+    jmp get_flags
+.endproc
 
 ;// jumps to next address pointed by the next word in memory if a condition
 ;// is met
@@ -2164,9 +2352,60 @@ n2: dec sp+1
     jmp n
 .endproc
 
-op_dd = op_cd
-op_ed = op_cd
-op_fd = op_cd
+; Z80: Call IX instructions
+.proc op_dd
+    jsr fetch_byte
+    tax
+;    lda ix_opcodes_l,x
+    pha
+;    lda ix_opcodes_h,x
+    pha
+    rts
+.endproc
+
+; Z80: Call IX BITS instructions
+.proc op_ddcb
+    jsr fetch_byte
+    tax
+;    lda ix_bits_opcodes_l,x
+    pha
+;    lda ix_bits_opcodes_h,x
+    pha
+    rts
+.endproc
+
+; Z80: Call EXTD instructions
+.proc op_ed
+    jsr fetch_byte
+    tax
+;    lda extd_opcodes_l,x
+    pha
+;    lda exts_opcodes_h,x
+    pha
+    rts
+.endproc
+
+; Z80: Call IY instructions
+.proc op_fd
+    jsr fetch_byte
+    tax
+;    lda iy_opcodes_l,x
+    pha
+;    lda iy_opcodes_h,x
+    pha
+    rts
+.endproc
+
+; Z80: Call IY BITS instructions
+.proc op_fdcb
+    jsr fetch_byte
+    tax
+;    lda iy_bits_opcodes_l,x
+    pha
+;    lda iy_bits_opcodes_h,x
+    pha
+    rts
+.endproc
 
 
 ;// calls to next word in memory if a condition is met
