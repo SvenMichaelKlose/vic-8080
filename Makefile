@@ -1,4 +1,4 @@
-ASMSOURCES=cpu.asm bios.asm
+ASMSOURCES=cpu.asm bios.asm calcscr.asm column-addrs.asm cursor.asm moveram.asm print.asm
 SOURCES=bdos.c main.c memory.c
 PROGRAM=cpm
 
@@ -8,7 +8,7 @@ AS      = $(CC65_HOME)/bin/ca65
 CC      = $(CC65_HOME)/bin/cl65
 AR      = $(CC65_HOME)/bin/ar65
 LD      = $(CC65_HOME)/bin/ld65
-CFLAGS  = -O -r -Or
+CFLAGS  = -O -Oi
 LDFLAGS = -m $(PROGRAM).map
 
 %.o: %.asm
