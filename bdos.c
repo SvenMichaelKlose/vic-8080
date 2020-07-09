@@ -367,7 +367,7 @@ bdos_call (char func)
 			reg_a = reg_l = bdos_open_file (reg_de, 0) ? 0xFF : 0;
 			break;
 
-        // CLose file
+        // Close file
 		case 16:
 			reg_a = reg_l = bdos_close_file (reg_de) ? 0xFF : 0;
 			break;
