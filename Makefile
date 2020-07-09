@@ -8,7 +8,7 @@ AS      = $(CC65_HOME)/bin/ca65
 CC      = $(CC65_HOME)/bin/cl65
 AR      = $(CC65_HOME)/bin/ar65
 LD      = $(CC65_HOME)/bin/ld65
-CFLAGS  = -O -Oi
+CFLAGS  = -O
 LDFLAGS = -m $(PROGRAM).map
 
 %.o: %.asm
