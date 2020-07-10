@@ -33,6 +33,7 @@ tmpptr:     .res 2  ; Must occupy $0000 to make unconditional branches work.
 v:          .res 2
 daa_correction:
 tmp:        .res 1
+tmp2:       .res 1
 daa_lsb:    .res 1
 daa_msb:    .res 1
 
@@ -231,10 +232,23 @@ n1: inc ptr+1
 .proc read_word
     jsr read_byte
     sta v
-    ; TODO: Increment to next byte
-    jsr read_byte
+    lda 0,x
+    sta tmp
+    lda 1,x
+    sta tmp2
+    inc 0,x
+    beq n
+
+l1: jsr read_byte
     sta v+1
+    lda tmp
+    sta 0,x
+    lda tmp2
+    sta 1,x
     rts
+
+n:  inc 1,x
+    jmp l1
 .endproc
 
 .proc write_byte
