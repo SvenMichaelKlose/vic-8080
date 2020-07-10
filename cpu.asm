@@ -1016,7 +1016,7 @@ op_6d = op_00
 .proc op_2a
     jsr fetch_word
     ldx #hl
-    jsr read_word_x
+    jsr read_word
     jmp next
 .endproc
 
