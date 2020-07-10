@@ -204,6 +204,9 @@ n1: inc ptr+1
     rts
 .endproc
 
+; X: Zero page vector with the address to read.
+;
+; A: Read byte.
 .proc read_byte
     lda 1,x
     lsr
@@ -222,9 +225,13 @@ n1: inc ptr+1
     rts
 .endproc
 
+; X: Zero page vector with the address to read.
+;
+; v: Read word.
 .proc read_word
     jsr read_byte
     sta v
+    ; TODO: Increment to next byte
     jsr read_byte
     sta v+1
     rts
@@ -372,6 +379,7 @@ n2: lda pc
     jmp next_rebanked
 .endproc
 
+; A: The flag on which to jump.
 .proc cond_relative_jump
     and flags
     beq n
@@ -381,6 +389,7 @@ n:  jsr fetch_byte
     jmp next
 .endproc
 
+; A: The flag on which not to jump.
 .proc cond_relative_jump_inv
     and flags
     bne n
@@ -1007,7 +1016,7 @@ op_6d = op_00
 .proc op_2a
     jsr fetch_word
     ldx #hl
-    jsr read_word
+    jsr read_word_x
     jmp next
 .endproc
 
