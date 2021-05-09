@@ -1,6 +1,6 @@
 ; 8080 emulator based on https://github.com/superzazu/8080
 ;
-; Copyright (c) 2020 Sven Michael Klose pixel@hugbox.org
+; Copyright (c) 2020-2021 Sven Michael Klose pixel@hugbox.org
 
 .export _cpu_init
 
@@ -99,6 +99,7 @@ opcodes_h:
 
 .code
 
+; Execute next instruction.
 .proc next
     jsr fetch_byte
     tax
@@ -113,7 +114,7 @@ opcodes_h:
     rts
 .endproc
 
-
+; Faster version of 'next' to be placed on the zero page.
 .proc next_zp
 ptr:
     ldx 12345
@@ -142,6 +143,7 @@ n1: inc pc+1
 ; ### MEMORY ACCESS ###
 ; #####################
 
+; Fetch next code byte.
 .proc fetch_byte
     ldy #0
     lda (ptr),y
@@ -151,8 +153,8 @@ n1: inc pc+1
     beq n1
     rts
 
-n1: inc ptr+1
-    inc pc+1
+n1: inc pc+1
+    inc ptr+1
     bmi rebank_pc
     rts
 .endproc
@@ -189,6 +191,7 @@ n1: inc ptr+1
     ;jmp jump
 .endproc
 
+; Fetch code word and store it in 'v'.
 .proc fetch_word
     jsr fetch_byte
     sta v
@@ -197,6 +200,7 @@ n1: inc ptr+1
     rts
 .endproc
 
+; Fetch code word and store it in address X.
 .proc fetch_word_x
     jsr fetch_byte
     sta 0,x
@@ -205,9 +209,12 @@ n1: inc ptr+1
     rts
 .endproc
 
-; X: Zero page vector with the address to read.
+; Read byte from emulated memory.
 ;
-; A: Read byte.
+; In:
+;   X: Zero page vector with the address to read.
+; Out:
+;   A: Read byte.
 .proc read_byte
     lda 1,x
     lsr
